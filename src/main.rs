@@ -2,6 +2,7 @@
 #![no_main]
 
 // Tane OS: an original, small preemptive kernel. No heap and no external crates.
+// Hardened with W^X paging and a compiled-in mandatory access control policy.
 
 // Each print borrows the global console only for the duration of one line.
 macro_rules! kprintln {
@@ -13,7 +14,10 @@ macro_rules! kprintln {
 
 mod frames;
 mod interrupts;
+mod mac;
+mod paging;
 mod sched;
+mod security;
 mod shell;
 mod tasks;
 
@@ -23,6 +27,8 @@ use core::panic::PanicInfo;
 use core::ptr::{addr_of, addr_of_mut, read_volatile, write_volatile};
 use core::sync::atomic::{AtomicBool, Ordering};
 use frames::{E820Entry, FrameAllocator, FRAME_SIZE};
+use mac::{Domain, Op};
+use security::Denied;
 use shell::{Action, Fault};
 
 const VGA: *mut u16 = 0xb8000 as *mut u16;
@@ -42,6 +48,14 @@ const FRAME_WORDS: usize = 4096;
 type Frames = FrameAllocator<FRAME_WORDS>;
 
 static mut FRAMES: Frames = Frames::new();
+
+/// Frames handed out by `alloc`, with the MAC label of the task that took
+/// them. `free` only accepts addresses listed here.
+const ALLOC_SLOTS: usize = 32;
+static mut ALLOCATED: [Option<(u64, Domain)>; ALLOC_SLOTS] = [None; ALLOC_SLOTS];
+
+/// Bytes in the data section; `fault nx` jumps here to prove data is not executable.
+static mut NOT_CODE: [u8; 16] = [0xc3; 16]; // `ret` if it were ever executed
 
 static mut CONSOLE: Console = Console { x: 0, y: 0, color: 0x07 };
 static SERIAL_PRESENT: AtomicBool = AtomicBool::new(false);
@@ -85,6 +99,7 @@ pub extern "C" fn _start() -> ! {
         // Mask the legacy PICs until the IDT exists.
         outb(0x21, 0xff);
         outb(0xa1, 0xff);
+        paging::init();
         serial_init();
     }
     console().clear();
@@ -105,6 +120,9 @@ pub extern "C" fn _start() -> ! {
     interrupts::enable();
     kprintln!("IDT: 32 exception handlers, #DF on IST1 | PIT timer {} Hz", interrupts::TIMER_HZ);
     kprintln!("Tasks: preemptive round robin, up to {} tasks", tasks::MAX_TASKS);
+    kprintln!("Protection: {} | kernel text read-only | null page unmapped | CR0.WP",
+        if paging::nx_enabled() { "NX data" } else { "NX unsupported" });
+    kprintln!("MAC: enforcing compiled-in policy | shell domain admin (drop lowers it)");
     if !SERIAL_PRESENT.load(Ordering::Relaxed) {
         kprintln!("COM1 not detected; VGA and keyboard only.");
     }
@@ -157,7 +175,9 @@ pub extern "C" fn _start() -> ! {
 
 fn prompt() {
     console().color = 0x0a;
-    write!(console(), "tane> ").ok();
+    // `$` marks a lowered (user domain) shell, like an unprivileged Unix shell.
+    let mark = if tasks::current_domain() == Domain::Admin { '>' } else { '$' };
+    write!(console(), "tane{} ", mark).ok();
     console().color = 0x07;
 }
 
@@ -176,28 +196,32 @@ fn execute(line: &str) {
             kprintln!("echo TEXT     Print text");
             kprintln!("calc A OP B   Integer + - * / (example: calc 12 * 3)");
             kprintln!("sleep MS      Block the shell for MS milliseconds (0-60000)");
-            kprintln!("fault KIND    Raise a CPU exception: bp de ud gp pf df");
+            kprintln!("fault KIND    Raise a CPU exception: bp de ud gp pf df null ro nx");
+            kprintln!("sec           Show memory protection and the MAC policy");
+            kprintln!("audit         Show MAC denials (admin only)");
+            kprintln!("drop          Lower this shell to the user domain until reboot");
             kprintln!("clear         Clear the screen");
             kprintln!("reboot        Restart the virtual machine");
             kprintln!("halt          Stop the CPU (close QEMU to exit)");
         }
         Action::About => {
-            kprintln!("Tane OS 0.3 - a small original Rust kernel.");
+            kprintln!("Tane OS 0.4 - a small original Rust kernel.");
             kprintln!("No Linux code, GRUB, external crates, libc, or host OS calls.");
             kprintln!("Firmware loads our 512-byte boot sector; it loads this kernel.");
             kprintln!("Ring 0, own GDT/TSS/IDT, PIT at {} Hz, E820 RAM in 4 KiB frames.", interrupts::TIMER_HZ);
             kprintln!("Preemptive round-robin kernel tasks with stacks from the frame allocator.");
+            kprintln!("W^X paging, NX data, mandatory access control with an audit log.");
             kprintln!("CPU exceptions print registers; no process isolation, filesystem, or network.");
         }
         Action::Memory => {
             let end = addr_of!(__kernel_end) as usize;
-            kprintln!("Page tables: 0x1000..0x4000");
+            kprintln!("Page tables: in kernel BSS (the boot sector's at 0x1000..0x4000 are retired)");
             kprintln!("E820 table:  0x5000..0x5610 (written by the boot sector)");
             kprintln!("Boot sector: 0x7c00..0x7e00");
             kprintln!("Kernel:      0x10000..0x{:x} ({} bytes incl. BSS)", end, end - 0x10000);
             kprintln!("Shell stack: 0x80000..0x90000 (grows down)");
             kprintln!("VGA text:    0xb8000");
-            kprintln!("First 1 GiB identity mapped with 2 MiB pages.");
+            kprintln!("First 1 GiB identity mapped: 4 KiB pages below 2 MiB, then 2 MiB pages.");
             kprintln!("No heap. Command buffer: {} bytes (max {} input).", LINE_SIZE, LINE_SIZE - 1);
             let map = e820_map();
             kprintln!("BIOS E820 map ({} entries):", map.len());
@@ -222,34 +246,23 @@ fn execute(line: &str) {
             tasks::sleep_until(interrupts::ticks() + (ms * interrupts::TIMER_HZ).div_ceil(1000));
             kprintln!("slept {} ms", ms);
         }
-        Action::Alloc => match with_frames(|frames| frames.allocate()) {
-            Some(address) => {
-                // Identity mapping: the physical address is directly writable.
-                for offset in (0..FRAME_SIZE).step_by(8) {
-                    unsafe { write_volatile((address + offset) as *mut u64, 0); }
-                }
-                kprintln!("allocated 0x{:x} (zeroed); {} frames free", address, with_frames(|frames| frames.free_frames()));
-            }
-            None => kprintln!("error: no free physical frames"),
+        Action::Alloc => match allocate_frame() {
+            Ok((address, free)) => kprintln!("allocated 0x{:x} (zeroed); {} frames free", address, free),
+            Err(Err(denied)) => report_denied(denied),
+            Err(Ok(error)) => kprintln!("error: {}", error),
         },
-        Action::Free(Ok(address)) => {
-            // Task stacks come from the same pool; only `kill` returns them.
-            let (owner, result) = with_frames(|frames| match tasks::stack_owner(address) {
-                Some(pid) => (Some(pid), Ok(0)),
-                None => (None, frames.free(address).map(|()| frames.free_frames())),
-            });
-            match (owner, result) {
-                (Some(pid), _) => kprintln!("error: 0x{:x} is in the stack of pid {}; use kill", address, pid),
-                (None, Ok(free)) => kprintln!("freed 0x{:x}; {} frames free", address, free),
-                (None, Err(error)) => kprintln!("error: 0x{:x}: {}", address, error.message()),
-            }
-        }
+        Action::Free(Ok(address)) => match free_frame(address) {
+            FreeOutcome::Freed(free) => kprintln!("freed 0x{:x}; {} frames free", address, free),
+            FreeOutcome::Denied(denied) => report_denied(denied),
+            FreeOutcome::TaskStack(pid) => kprintln!("error: 0x{:x} is in the stack of pid {}; use kill", address, pid),
+            FreeOutcome::Error(error) => kprintln!("error: 0x{:x}: {}", address, error),
+        },
         Action::Tasks => {
-            kprintln!("PID NAME   STATE       CPU s     COUNTER  STACK");
+            kprintln!("PID NAME   DOMAIN STATE       CPU s     COUNTER  STACK");
             tasks::list(|task| {
                 let hundredths = task.cpu_ticks * 100 / interrupts::TIMER_HZ;
-                write!(console(), "{:>3} {:<6} {:<8} {:>5}.{:02} ", task.pid, task.name, task.state,
-                    hundredths / 100, hundredths % 100).ok();
+                write!(console(), "{:>3} {:<6} {:<6} {:<8} {:>5}.{:02} ", task.pid, task.name, task.domain.name(),
+                    task.state, hundredths / 100, hundredths % 100).ok();
                 match task.counter {
                     Some(counter) => write!(console(), "{:>11}", counter).ok(),
                     None => write!(console(), "{:>11}", "-").ok(),
@@ -262,24 +275,59 @@ fn execute(line: &str) {
             });
         }
         Action::Spawn(Ok(kind)) => match tasks::spawn(kind) {
-            Ok(pid) => kprintln!("started {} as pid {}", kind.name(), pid),
-            Err(error) => kprintln!("error: {}", error),
+            Ok(pid) => kprintln!("started {} as pid {} in domain {}", kind.name(), pid, tasks::current_domain().name()),
+            Err(tasks::SpawnError::Denied(denied)) => report_denied(denied),
+            Err(tasks::SpawnError::Failed(error)) => kprintln!("error: {}", error),
         },
         Action::Kill(Ok(pid)) => match tasks::kill(pid) {
             Ok(name) => kprintln!("killed pid {} ({}); {} frames free", pid, name, with_frames(|frames| frames.free_frames())),
-            Err(error) => kprintln!("error: {}", error),
+            Err(tasks::KillError::Denied(denied)) => report_denied(denied),
+            Err(tasks::KillError::Failed(error)) => kprintln!("error: {}", error),
         },
-        Action::Fault(Ok(fault)) => raise(fault),
+        Action::Fault(Ok(fault)) => {
+            if permitted(Op::Fault) {
+                raise(fault);
+            }
+        }
+        Action::Security => show_security(),
+        Action::Audit => {
+            if permitted(Op::ReadAudit) {
+                kprintln!("MAC denials: {} since boot (newest {} kept)", security::denials(), security::AUDIT_RECORDS);
+                security::audit_records(|number, record| {
+                    let hundredths = record.tick * 100 / interrupts::TIMER_HZ;
+                    write!(console(), "#{:<3} {:>4}.{:02}s pid {} {} {}", number, hundredths / 100, hundredths % 100,
+                        record.pid, record.subject.name(), record.op.name()).ok();
+                    if let Some(object) = record.object {
+                        write!(console(), " {} object", object.name()).ok();
+                    }
+                    match (record.op, record.target) {
+                        (Op::Kill, Some(pid)) => kprintln!(" (pid {}) DENIED", pid),
+                        (_, Some(address)) => kprintln!(" (0x{:x}) DENIED", address),
+                        (_, None) => kprintln!(" DENIED"),
+                    }
+                });
+            }
+        }
+        Action::DropToUser => match tasks::lower_domain(Domain::User) {
+            Ok(from) => kprintln!("domain {} -> user; this cannot be undone until reboot", from.name()),
+            Err(Domain::User) => kprintln!("already in domain user; no command raises a domain"),
+            Err(current) => kprintln!("error: domain {} cannot be lowered to user", current.name()),
+        },
         Action::Clear => {
             console().clear();
             // Clear common ANSI terminals on the serial side as well.
             for b in b"\x1b[2J\x1b[H" { unsafe { serial_write(*b); } }
         }
         Action::Halt => {
-            kprintln!("HALTED");
-            halt();
+            if permitted(Op::Halt) {
+                kprintln!("HALTED");
+                halt();
+            }
         }
         Action::Reboot => {
+            if !permitted(Op::Reboot) {
+                return;
+            }
             kprintln!("REBOOTING");
             // QEMU's PC implements the 8042 controller reset command.
             unsafe {
@@ -295,6 +343,93 @@ fn execute(line: &str) {
         Action::Unknown => kprintln!("Unknown command. Type help."),
         Action::Empty => {}
     }
+}
+
+/// The MAC enforcement point for commands without an object.
+fn permitted(op: Op) -> bool {
+    match security::check(op, None, None) {
+        Ok(()) => true,
+        Err(denied) => {
+            report_denied(denied);
+            false
+        }
+    }
+}
+
+fn report_denied(denied: Denied) {
+    match denied.object {
+        Some(object) => kprintln!("denied: {} may not {} objects of domain {} (MAC policy; audited)",
+            denied.subject.name(), denied.op.name(), object.name()),
+        None => kprintln!("denied: {} may not {} (MAC policy; audited)", denied.subject.name(), denied.op.name()),
+    }
+}
+
+/// Allocate, zero and register one frame under the caller's label.
+fn allocate_frame() -> Result<(u64, usize), Result<&'static str, Denied>> {
+    security::check(Op::Alloc, None, None).map_err(Err)?;
+    let domain = tasks::current_domain();
+    let address = with_frames(|frames| {
+        let registry = unsafe { &mut *addr_of_mut!(ALLOCATED) };
+        let slot = registry.iter().position(Option::is_none).ok_or("alloc registry is full (32 frames)")?;
+        let address = frames.allocate().ok_or("no free physical frames")?;
+        registry[slot] = Some((address, domain));
+        Ok(address)
+    }).map_err(Ok)?;
+    // Object reuse: zero before use. Identity mapping makes it writable here.
+    for offset in (0..FRAME_SIZE).step_by(8) {
+        unsafe { write_volatile((address + offset) as *mut u64, 0); }
+    }
+    Ok((address, with_frames(|frames| frames.free_frames())))
+}
+
+enum FreeOutcome {
+    Freed(usize),
+    Denied(Denied),
+    TaskStack(u32),
+    Error(&'static str),
+}
+
+/// Free a frame from `alloc` if the policy allows the caller to touch its
+/// label. The lookup, check and free happen in one CLI section.
+fn free_frame(address: u64) -> FreeOutcome {
+    with_frames(|frames| {
+        let registry = unsafe { &mut *addr_of_mut!(ALLOCATED) };
+        let Some(slot) = registry.iter().position(|entry| matches!(entry, Some((a, _)) if *a == address)) else {
+            return match frames.check_free(address, 1) {
+                Err(error) => FreeOutcome::Error(error.message()),
+                Ok(()) => match tasks::stack_owner(address) {
+                    Some(pid) => FreeOutcome::TaskStack(pid),
+                    None => FreeOutcome::Error("not a frame from alloc"),
+                },
+            };
+        };
+        let label = registry[slot].map(|(_, domain)| domain);
+        if let Err(denied) = security::check(Op::Free, label, Some(address)) {
+            return FreeOutcome::Denied(denied);
+        }
+        match frames.free(address) {
+            Ok(()) => {
+                registry[slot] = None;
+                FreeOutcome::Freed(frames.free_frames())
+            }
+            Err(error) => FreeOutcome::Error(error.message()),
+        }
+    })
+}
+
+fn show_security() {
+    let (pid, name) = tasks::current();
+    let (text_start, text_end) = paging::text_range();
+    kprintln!("Subject: pid {} ({}) in domain {}", pid, name, tasks::current_domain().name());
+    kprintln!("Paging:  NX {} | text 0x{:x}..0x{:x} read-only | rodata read-only | data NX",
+        if paging::nx_enabled() { "on" } else { "unsupported" }, text_start, text_end);
+    kprintln!("         page 0 unmapped | CR0.WP on | IST1 stack for #DF | stack canaries");
+    kprintln!("MAC:     enforcing; policy compiled in, no command changes it");
+    kprintln!("  admin  halt reboot fault audit alloc spawn; free/kill admin+user objects");
+    kprintln!("  user   alloc spawn; free/kill user objects only");
+    kprintln!("  kernel objects (idle) are off limits; domains only go admin -> user");
+    kprintln!("Objects: tasks and alloc frames carry their creator's domain; frames are");
+    kprintln!("         zeroed before reuse. Audit: {} denials since boot.", security::denials());
 }
 
 /// Deliberately execute an instruction that makes the CPU raise `fault`.
@@ -314,6 +449,12 @@ fn raise(fault: Fault) {
             // With RSP unmapped, delivering #UD page-faults and delivering that
             // #PF faults again: the CPU escalates to #DF, which uses IST1.
             Fault::DoubleFault => asm!("mov rsp, {}", "ud2", in(reg) 0x4000_1000u64, options(noreturn)),
+            // Page 0 is not mapped.
+            Fault::NullPointer => asm!("mov {0}, qword ptr [{0}]", inout(reg) 0u64 => _, options(readonly, nostack)),
+            // Kernel code is mapped read-only and CR0.WP makes ring 0 obey it.
+            Fault::ReadOnly => asm!("mov byte ptr [{}], 0xcc", in(reg) paging::text_range().0, options(nostack)),
+            // Data pages are NX: the fetch faults before any byte runs.
+            Fault::NoExecute => asm!("call {}", in(reg) addr_of!(NOT_CODE) as u64, clobber_abi("C")),
         }
     }
     // Only #BP returns; every other exception halts in its handler.

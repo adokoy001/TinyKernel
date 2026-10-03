@@ -20,6 +20,7 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "build"
 PROMPT = b"tane> "
+USER_PROMPT = b"tane$ "
 FRAME = 4096
 LOW_MEMORY_END = 1 << 20
 FRAME_LIMIT = 1 << 30
@@ -31,6 +32,7 @@ class Machine:
         self.name = name
         self.with_serial = serial
         self.memory = memory
+        self.prompt = PROMPT  # USER_PROMPT after `drop`
         self.deadline = deadline
         self.output = bytearray()
         self.process = None
@@ -181,7 +183,7 @@ class Machine:
     def command(self, data):
         start = len(self.output)
         self.send(data)
-        return self.wait_for(PROMPT, start=start)
+        return self.wait_for(self.prompt, start=start)
 
     def monitor(self, command, arguments=None):
         self.qmp_id += 1
@@ -227,7 +229,7 @@ class Machine:
             self.monitor("human-monitor-command", {"command-line": f"sendkey {key} 20"})
             time.sleep(0.04)  # Let each press and its release reach the 8042.
             self.drain()
-        return self.wait_for(PROMPT, start=start)
+        return self.wait_for(self.prompt, start=start)
 
     def close(self):
         if self.process is not None and self.process.poll() is None:
@@ -302,13 +304,16 @@ def frames_free(result):
 
 
 def tasks(machine):
-    """Parse `ps` into {pid: (name, state, cpu_hundredths, counter)}."""
+    """Parse `ps` into {pid: (name, state, cpu_hundredths, counter, domain)}."""
     table = {}
-    for pid, name, state, seconds, hundredths, counter in re.findall(
-            rb"^ *(\d+) (\w+) +(\w+) +(\d+)\.(\d\d) +(\d+|-)  0x[0-9a-f]+ \(", machine.command(b"ps\r"), re.M):
-        table[int(pid)] = (name, state, int(seconds) * 100 + int(hundredths), None if counter == b"-" else int(counter))
+    for pid, name, domain, state, seconds, hundredths, counter in re.findall(
+            rb"^ *(\d+) (\w+) +(\w+) +(\w+) +(\d+)\.(\d\d) +(\d+|-)  0x[0-9a-f]+ \(", machine.command(b"ps\r"), re.M):
+        table[int(pid)] = (name, state, int(seconds) * 100 + int(hundredths),
+                           None if counter == b"-" else int(counter), domain)
     if table.get(1, (None,))[:2] != (b"shell", b"running") or table.get(0, (None,))[0] != b"idle":
         raise AssertionError(f"Unexpected task table {table!r}")
+    if table[0][4] != b"kernel":
+        raise AssertionError(f"idle must be labelled kernel: {table[0]!r}")
     return table
 
 
@@ -347,12 +352,14 @@ def main():
 
         result = machine.output
         contains(result, b"IDT: 32 exception handlers, #DF on IST1 | PIT timer 100 Hz")
+        contains(result, b"Protection: NX data | kernel text read-only | null page unmapped | CR0.WP")
+        contains(result, b"MAC: enforcing compiled-in policy | shell domain admin (drop lowers it)")
         if b"COM1 not detected" in result:
             raise AssertionError("COM1 was not detected although QEMU provides it")
         contains(machine.command(b"help\r"), b"calc A OP B")
         contains(machine.command(b"about\r"), b"CPU exceptions print registers; no process isolation, filesystem, or network.")
         result = machine.command(b"mem\r")
-        contains(result, b"First 1 GiB identity mapped with 2 MiB pages.")
+        contains(result, b"First 1 GiB identity mapped: 4 KiB pages below 2 MiB, then 2 MiB pages.")
         contains(result, b"Command buffer: 128 bytes (max 127 input).")
         checked("help/about/mem describe the running kernel")
 
@@ -457,8 +464,8 @@ def main():
             raise AssertionError("Exited task was not reaped")
         if checked_frames(machine.command(b"mem\r"))[1] != busy:
             raise AssertionError("Exited task did not return its stack frames")
-        contains(machine.command(b"kill 1\r"), b"error: cannot kill the shell or the idle task")
-        contains(machine.command(b"kill 0\r"), b"error: cannot kill the shell or the idle task")
+        contains(machine.command(b"kill 1\r"), b"error: a task cannot kill itself")
+        contains(machine.command(b"kill 0\r"), b"denied: admin may not kill objects of domain kernel (MAC policy; audited)")
         contains(machine.command(b"kill 9999\r"), b"error: no such task")
         contains(machine.command(b"spawn idle\r"), b"error: usage: spawn spin|beat|once")
         extra = []
@@ -494,11 +501,10 @@ def main():
         checked("PS/2 keyboard path works, including Shift letters and symbols")
 
         contains(machine.command(b"clear\r"), b"\x1b[2J\x1b[H")
-        machine.command(b"about\r")
+        contains(machine.command(b"sec\r"), b"Paging:  NX on | text 0x10000..")
         shown = [spawn(machine, "spin"), spawn(machine, "beat")]
         machine.command(b"sleep 300\r")
         machine.command(b"ps\r")
-        machine.command(b"calc 12 * 3\r")
         screenshot = OUT / "tane-os.ppm"
         machine.monitor("screendump", {"filename": str(screenshot)})
         if not screenshot.is_file() or screenshot.stat().st_size < 1000:
@@ -535,6 +541,38 @@ def main():
         if larger - usable < 16000:
             raise AssertionError(f"128 MiB gives {larger} frames, 64 MiB gave {usable}")
         checked("E820 detects the RAM size (64 MiB vs 128 MiB)")
+
+        admin_frame = int(re.search(rb"allocated 0x([0-9a-f]+)", reboot.command(b"alloc\r")).group(1), 16)
+        admin_spin = spawn(reboot, "spin")
+        contains(reboot.command(b"audit\r"), b"MAC denials: 0 since boot")
+        contains(reboot.command(b"kill 0\r"), b"denied: admin may not kill objects of domain kernel")
+        contains(reboot.command(b"audit\r"), b"pid 1 admin kill kernel object (pid 0) DENIED")
+        reboot.prompt = USER_PROMPT
+        contains(reboot.command(b"drop\r"), b"domain admin -> user; this cannot be undone until reboot")
+        for command in (b"halt", b"reboot", b"fault bp", b"audit"):
+            contains(reboot.command(command + b"\r"),
+                     b"denied: user may not " + command.split()[0] + b" (MAC policy; audited)")
+        contains(reboot.command(b"echo still running\r"), b"\r\nstill running\r\n")
+        contains(reboot.command(f"kill {admin_spin}\r".encode("ascii")),
+                 b"denied: user may not kill objects of domain admin")
+        contains(reboot.command(f"free 0x{admin_frame:x}\r".encode("ascii")),
+                 b"denied: user may not free objects of domain admin")
+        user_frame = int(re.search(rb"allocated 0x([0-9a-f]+)", reboot.command(b"alloc\r")).group(1), 16)
+        contains(reboot.command(f"free 0x{user_frame:x}\r".encode("ascii")), f"freed 0x{user_frame:x}".encode("ascii"))
+        contains(reboot.command(b"free 0x1000\r"), b"error: 0x1000: not a managed RAM frame")
+        result = reboot.command(b"spawn beat\r")
+        contains(result, b" in domain user")
+        user_beat = int(re.search(rb"as pid (\d+)", result).group(1))
+        table = tasks(reboot)
+        if table[1][4] != b"user" or table[admin_spin][4] != b"admin" or table[user_beat][4] != b"user":
+            raise AssertionError(f"Wrong MAC labels in {table!r}")
+        contains(reboot.command(f"kill {user_beat}\r".encode("ascii")), f"killed pid {user_beat} (beat)".encode("ascii"))
+        contains(reboot.command(b"drop\r"), b"already in domain user; no command raises a domain")
+        contains(reboot.command(b"su\r"), b"Unknown command.")
+        result = reboot.command(b"sec\r")
+        contains(result, b"Subject: pid 1 (shell) in domain user")
+        contains(result, b"Audit: 7 denials since boot.")
+        checked("MAC: labels, one-way drop to user, denials enforced and audited")
         reboot.close()
 
         fatal_fault("de", deadline, machines, [b"CPU EXCEPTION 0 #DE: Divide error"])
@@ -547,6 +585,10 @@ def main():
         # A #DF handler on the faulting stack would triple fault and reboot.
         fatal_fault("df", deadline, machines, [b"CPU EXCEPTION 8 #DF: Double fault", b"rsp=0000000040001000"])
         checked("#DF runs on its IST stack after an unmapped RSP")
+        fatal_fault("null", deadline, machines, [b"error=0x0 (not-present read) cr2=0x0000000000000000"])
+        fatal_fault("ro", deadline, machines, [b"error=0x3 (protection write) cr2=0x0000000000010000"])
+        fatal_fault("nx", deadline, machines, [b"error=0x11 (protection read fetch) cr2="])
+        checked("paging: null page unmapped, kernel text read-only, data not executable")
 
         vga = Machine("vga-only", deadline, serial=False)
         machines.append(vga)

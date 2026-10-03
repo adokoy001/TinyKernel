@@ -1,7 +1,7 @@
 /*
  * Tane OS: original BIOS boot sector, no external bootloader.
  * GNU assembler, linked at 0x7c00. Boot as a 1.44 MiB floppy.
- * LBA 1..128 are copied to 0x10000..0x1ffff, then called in long mode.
+ * LBA 1..256 are copied to 0x10000..0x2ffff, then called in long mode.
  * The loader deliberately assumes the floppy geometry: 18 sectors, 2 heads.
  */
 .intel_syntax noprefix
@@ -26,7 +26,7 @@ real_start:
     mov es, ax
     xor bx, bx
     mov cx, 2                 /* cylinder 0, sector 2 (LBA 1) */
-    mov si, 128
+    mov si, 256
     sti
 read_sector:
     mov bp, 3
@@ -60,7 +60,14 @@ disk_error:
     hlt
     jmp disk_error
 read_ok:
-    add bx, 512               /* 128 sectors exactly fill this 64 KiB DMA window */
+    /* Sectors are 512-byte aligned, so none crosses a 64 KiB DMA boundary;
+     * after each full 64 KiB window, move ES to the next one. */
+    add bx, 512
+    jnz same_window
+    mov ax, es
+    add ax, 0x1000
+    mov es, ax
+same_window:
     inc cl
     cmp cl, 19
     jb next_sector

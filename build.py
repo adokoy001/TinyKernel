@@ -10,7 +10,7 @@ import sys
 ROOT = Path(__file__).resolve().parent
 OUT = ROOT / "build"
 TARGET = "x86_64-unknown-none"
-KERNEL_SECTORS = 128
+KERNEL_SECTORS = 256
 FLOPPY_BYTES = 1_474_560
 
 

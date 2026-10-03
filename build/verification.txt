@@ -1,29 +1,30 @@
-Tane OS verification — 2026 10 03 (0.3: E820 frames, preemptive tasks)
+Tane OS verification — 2026 10 03 (0.4: W^X paging, MAC, audit log)
 
 Compiler: rustc 1.90.0
 Binutils: GNU as / ld 2.42
 Emulator: QEMU 8.2.2, PC BIOS, TCG, 64 MiB RAM (one check boots 128 MiB)
 
-Host tests: shell 10, frames 5, sched 4 passed, 0 failed.
-QEMU integration checks: 20 passed, 0 failed (Unix socket and pipe transports,
-three runs each).
-Boot: exactly 512 bytes, ending 55 AA.
+Host tests: shell 10, frames 5, sched 4, mac 5 passed, 0 failed.
+QEMU integration checks: 22 passed, 0 failed (Unix socket and pipe transports,
+two runs each).
+Boot: exactly 512 bytes (416 used), ending 55 AA; loads up to 128 KiB.
 Kernel entry: 0x10000, ELF64 x86-64.
-Flat kernel: 45392 bytes, below 65536 byte boot load budget.
+Flat kernel: 59488 bytes, below 131072 byte boot load budget.
 Unresolved ELF symbols: none.
 Two full builds produced identical disk images.
-SHA256: 4e4e88ad4176ec713a6f50e6460df83ccb86650d7b53d4168d9b23f0401ed8f7
+SHA256: 3601493ba0ec962af90556758a1fc5a2d3b749a4c3b2bc03fa789cc3e933daa9
 
-Memory checked in QEMU: the frame count printed by the kernel equals the count
-recomputed from the printed E820 map, for both 64 MiB (16096 frames) and
-128 MiB. alloc/free reject misaligned, unmanaged, double-freed and task-stack
-addresses; killing or exiting tasks restores every frame.
-Tasks checked in QEMU: two CPU-bound tasks both advance (timer preemption),
-the shell answers serial and PS/2 input while they run, a sleeping task uses
-no CPU, an exiting task is reaped, and the table stops at 8 tasks.
-With timer preemption disabled, the integration test fails (mutation check).
+Memory protection checked in QEMU: reading address 0 faults (not present),
+writing kernel text faults (protection write, CR0.WP), and calling into a
+data array faults on the instruction fetch (NX).
+MAC checked in QEMU: tasks and alloc frames carry their creator's domain;
+admin may not kill the kernel-labelled idle task; after drop the shell is
+user, halt/reboot/fault/audit and admin-labelled kill/free are denied while
+user objects remain manageable; drop cannot be reversed; denials are counted
+and readable by admin through audit.
+Mutation checks: with the MAC check forced to allow, or with NX bits removed
+from the page tables, the integration test fails.
 Not reproduced in tests: the stack canary's overflow detection.
-Exceptions checked in QEMU: #BP resumes; #DE, #UD, #GP, #PF, #DF report and halt.
 
 Only QEMU BIOS execution was tested; physical hardware and UEFI were not tested.
 See smoke-summary.txt and smoke-serial.txt for integration evidence.

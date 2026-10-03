@@ -8,3 +8,4 @@ build/*.stderr
 build/*.ppm
 build/frames-tests
 build/sched-tests
+build/mac-tests

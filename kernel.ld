@@ -3,9 +3,16 @@ ENTRY(_start)
 SECTIONS
 {
     . = 0x10000;
+    /* Page-aligned so paging can map code read-only + executable and
+     * everything else non-executable (see src/paging.rs). */
+    __text_start = .;
     .text : { KEEP(*(.text.entry)) *(.text .text.*) }
-    .rodata ALIGN(16) : { *(.rodata .rodata.*) }
-    .data ALIGN(16) : { *(.data .data.*) *(.got .got.*) }
+    . = ALIGN(4096);
+    __text_end = .;
+    .rodata : { *(.rodata .rodata.*) }
+    . = ALIGN(4096);
+    __rodata_end = .;
+    .data : { *(.data .data.*) *(.got .got.*) }
     .bss ALIGN(16) (NOLOAD) : {
         __bss_start = .;
         *(.bss .bss.*) *(COMMON)

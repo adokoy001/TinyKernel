@@ -1,5 +1,5 @@
 Tane OS QEMU integration test
-Elapsed: 10.14s
+Elapsed: 11.52s
 Transport (main): local pipes (Unix sockets unavailable or disabled)
 Transport (reboot): local pipes (Unix sockets unavailable or disabled)
 Transport (fault-de): local pipes (Unix sockets unavailable or disabled)
@@ -7,6 +7,9 @@ Transport (fault-ud): local pipes (Unix sockets unavailable or disabled)
 Transport (fault-gp): local pipes (Unix sockets unavailable or disabled)
 Transport (fault-pf): local pipes (Unix sockets unavailable or disabled)
 Transport (fault-df): local pipes (Unix sockets unavailable or disabled)
+Transport (fault-null): local pipes (Unix sockets unavailable or disabled)
+Transport (fault-ro): local pipes (Unix sockets unavailable or disabled)
+Transport (fault-nx): local pipes (Unix sockets unavailable or disabled)
 Transport (vga-only): local pipes (Unix sockets unavailable or disabled)
 PASS: BIOS floppy boots into the Rust shell
 PASS: help/about/mem describe the running kernel
@@ -25,7 +28,9 @@ PASS: clear works and VGA screenshot is captured
 PASS: halt stops the guest CPU while QEMU stays alive
 PASS: 8042 reboot boots again and accepts a fresh command
 PASS: E820 detects the RAM size (64 MiB vs 128 MiB)
+PASS: MAC: labels, one-way drop to user, denials enforced and audited
 PASS: #DE/#UD/#GP/#PF print diagnostics and halt
 PASS: #DF runs on its IST stack after an unmapped RSP
+PASS: paging: null page unmapped, kernel text read-only, data not executable
 PASS: keyboard works when the machine has no COM1 (run.sh default)
 RESULT: PASS

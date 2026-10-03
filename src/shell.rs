@@ -11,6 +11,9 @@ pub enum Action<'a> {
     Uptime,
     Alloc,
     Tasks,
+    Security,
+    Audit,
+    DropToUser,
     Echo(&'a str),
     Calc(Result<i64, &'static str>),
     Sleep(Result<u64, &'static str>),
@@ -31,6 +34,12 @@ pub enum Fault {
     GeneralProtection,
     PageFault,
     DoubleFault,
+    /// Read the unmapped page at address 0.
+    NullPointer,
+    /// Write to the kernel's read-only code.
+    ReadOnly,
+    /// Jump into non-executable data.
+    NoExecute,
 }
 
 /// Demonstration tasks that `spawn` can start.
@@ -55,7 +64,7 @@ impl TaskKind {
 }
 
 pub const MAX_SLEEP_MS: u64 = 60_000;
-const FAULT_USAGE: &str = "usage: fault bp|de|ud|gp|pf|df";
+const FAULT_USAGE: &str = "usage: fault bp|de|ud|gp|pf|df|null|ro|nx";
 const SLEEP_USAGE: &str = "usage: sleep MS (0-60000)";
 const FREE_USAGE: &str = "usage: free ADDR (0x hex or decimal)";
 const SPAWN_USAGE: &str = "usage: spawn spin|beat|once";
@@ -90,6 +99,9 @@ pub fn parse(line: &str) -> Action<'_> {
         "uptime" => Action::Uptime,
         "alloc" => Action::Alloc,
         "ps" => Action::Tasks,
+        "sec" => Action::Security,
+        "audit" => Action::Audit,
+        "drop" => Action::DropToUser,
         "clear" => Action::Clear,
         "halt" => Action::Halt,
         "reboot" => Action::Reboot,
@@ -136,6 +148,9 @@ fn fault(text: &str) -> Result<Fault, &'static str> {
         "gp" => Ok(Fault::GeneralProtection),
         "pf" => Ok(Fault::PageFault),
         "df" => Ok(Fault::DoubleFault),
+        "null" => Ok(Fault::NullPointer),
+        "ro" => Ok(Fault::ReadOnly),
+        "nx" => Ok(Fault::NoExecute),
         _ => Err(FAULT_USAGE),
     }
 }
@@ -178,6 +193,9 @@ mod tests {
             ("uptime", Action::Uptime),
             ("alloc", Action::Alloc),
             ("ps", Action::Tasks),
+            ("sec", Action::Security),
+            ("audit", Action::Audit),
+            ("drop", Action::DropToUser),
         ] {
             assert_eq!(parse(line), expected);
         }
@@ -192,6 +210,8 @@ mod tests {
         assert_eq!(parse("uptime now"), Action::Unknown);
         assert_eq!(parse("alloc 2"), Action::Unknown);
         assert_eq!(parse("ps -a"), Action::Unknown);
+        assert_eq!(parse("drop admin"), Action::Unknown);
+        assert_eq!(parse("su"), Action::Unknown);
         assert_eq!(parse("echoes"), Action::Unknown);
         assert_eq!(parse("\u{2003}"), Action::Unknown);
     }
@@ -261,11 +281,14 @@ mod tests {
             ("fault gp", Fault::GeneralProtection),
             ("fault pf", Fault::PageFault),
             ("fault  df ", Fault::DoubleFault),
+            ("fault null", Fault::NullPointer),
+            ("fault ro", Fault::ReadOnly),
+            ("fault nx", Fault::NoExecute),
         ] {
             assert_eq!(parse(line), Action::Fault(Ok(expected)));
         }
         for line in ["fault", "fault PF", "fault pf gp", "fault nmi"] {
-            assert_eq!(parse(line), Action::Fault(Err("usage: fault bp|de|ud|gp|pf|df")));
+            assert_eq!(parse(line), Action::Fault(Err("usage: fault bp|de|ud|gp|pf|df|null|ro|nx")));
         }
     }
 

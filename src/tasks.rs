@@ -8,6 +8,8 @@
 
 use crate::frames::FRAME_SIZE;
 use crate::interrupts::{self, Frame};
+use crate::mac::{self, Domain, Op};
+use crate::security::{self, Denied};
 use crate::sched::{self, State};
 use crate::shell::TaskKind;
 use core::mem::size_of;
@@ -33,10 +35,12 @@ struct Task {
     stack: u64,
     owns_stack: bool,
     cpu_ticks: u64,
+    /// MAC label: the subject domain, inherited from the creating task.
+    domain: Domain,
 }
 
 impl Task {
-    const EMPTY: Task = Task { pid: 0, name: "", context: 0, stack: 0, owns_stack: false, cpu_ticks: 0 };
+    const EMPTY: Task = Task { pid: 0, name: "", context: 0, stack: 0, owns_stack: false, cpu_ticks: 0, domain: Domain::Kernel };
 }
 
 static mut STATES: [State; MAX_TASKS] = [State::Free; MAX_TASKS];
@@ -54,6 +58,7 @@ static mut IDLE_STACK: IdleStack = IdleStack([0; 8192]);
 pub struct Info {
     pub pid: u32,
     pub name: &'static str,
+    pub domain: Domain,
     pub state: &'static str,
     pub cpu_ticks: u64,
     pub counter: Option<u64>,
@@ -71,7 +76,7 @@ unsafe fn table() -> (&'static mut [State; MAX_TASKS], &'static mut [Task; MAX_T
 pub unsafe fn init() {
     let (states, tasks) = table();
     write_volatile(BOOT_STACK_BASE as *mut u64, CANARY);
-    tasks[SHELL] = Task { pid: 1, name: "shell", stack: BOOT_STACK_BASE, ..Task::EMPTY };
+    tasks[SHELL] = Task { pid: 1, name: "shell", stack: BOOT_STACK_BASE, domain: Domain::Admin, ..Task::EMPTY };
     states[SHELL] = State::Ready;
     let base = addr_of!(IDLE_STACK) as u64;
     let context = prepare(base, size_of::<IdleStack>() as u64, idle_main, 0);
@@ -96,6 +101,23 @@ pub fn current() -> (u32, &'static str) {
         let task = &(*addr_of!(TASKS))[CURRENT];
         (task.pid, task.name)
     }
+}
+
+pub fn current_domain() -> Domain {
+    interrupts::without(|| unsafe { (*addr_of!(TASKS))[CURRENT].domain })
+}
+
+/// Lower the current task's domain. Raising it is refused by the policy.
+pub fn lower_domain(to: Domain) -> Result<Domain, Domain> {
+    interrupts::without(|| unsafe {
+        let task = &mut table().1[CURRENT];
+        if !mac::may_transition(task.domain, to) {
+            return Err(task.domain);
+        }
+        let from = task.domain;
+        task.domain = to;
+        Ok(from)
+    })
 }
 
 /// Save `frame` as the current task's context and pick the task to resume.
@@ -185,12 +207,23 @@ fn exit() -> ! {
     crate::halt() // Unreachable: an exited task is never resumed.
 }
 
-pub fn spawn(kind: TaskKind) -> Result<u32, &'static str> {
+pub enum SpawnError {
+    Denied(Denied),
+    Failed(&'static str),
+}
+
+pub fn spawn(kind: TaskKind) -> Result<u32, SpawnError> {
+    security::check(Op::Spawn, None, None).map_err(SpawnError::Denied)?;
     interrupts::without(|| unsafe {
         let (states, tasks) = table();
-        let slot = states.iter().position(|state| *state == State::Free).ok_or("task table is full (8 tasks)")?;
+        let slot = states.iter().position(|state| *state == State::Free)
+            .ok_or(SpawnError::Failed("task table is full (8 tasks)"))?;
         let stack = crate::with_frames(|frames| frames.allocate_contiguous(STACK_FRAMES))
-            .ok_or("no free physical frames for a stack")?;
+            .ok_or(SpawnError::Failed("no free physical frames for a stack"))?;
+        // Object reuse: a new stack never shows a previous owner's data.
+        for offset in (0..STACK_BYTES).step_by(8) {
+            write_volatile((stack + offset) as *mut u64, 0);
+        }
         let entry: extern "C" fn(u64) -> ! = match kind {
             TaskKind::Spin => spin_main,
             TaskKind::Beat => beat_main,
@@ -200,21 +233,29 @@ pub fn spawn(kind: TaskKind) -> Result<u32, &'static str> {
         let pid = NEXT_PID;
         NEXT_PID += 1;
         let context = prepare(stack, STACK_BYTES, entry, slot as u64);
-        tasks[slot] = Task { pid, name: kind.name(), context, stack, owns_stack: true, cpu_ticks: 0 };
+        let domain = tasks[CURRENT].domain;
+        tasks[slot] = Task { pid, name: kind.name(), context, stack, owns_stack: true, cpu_ticks: 0, domain };
         states[slot] = State::Ready;
         Ok(pid)
     })
 }
 
-pub fn kill(pid: u32) -> Result<&'static str, &'static str> {
+pub enum KillError {
+    Denied(Denied),
+    Failed(&'static str),
+}
+
+pub fn kill(pid: u32) -> Result<&'static str, KillError> {
     interrupts::without(|| unsafe {
         let (states, tasks) = table();
         let slot = (0..MAX_TASKS)
             .find(|&slot| states[slot] != State::Free && tasks[slot].pid == pid)
-            .ok_or("no such task")?;
-        if slot == SHELL || slot == IDLE {
-            return Err("cannot kill the shell or the idle task");
+            .ok_or(KillError::Failed("no such task"))?;
+        if slot == CURRENT {
+            return Err(KillError::Failed("a task cannot kill itself"));
         }
+        // The idle task is labelled kernel, so the policy refuses it.
+        security::check(Op::Kill, Some(tasks[slot].domain), Some(pid as u64)).map_err(KillError::Denied)?;
         // The shell is running this command, so the victim is not on the CPU.
         let name = tasks[slot].name;
         release(states, tasks, slot);
@@ -247,6 +288,7 @@ pub fn list(mut each: impl FnMut(&Info)) {
             snapshot[slot] = Some(Info {
                 pid: task.pid,
                 name: task.name,
+                domain: task.domain,
                 state: if slot == CURRENT { "running" } else { states[slot].name() },
                 cpu_ticks: task.cpu_ticks,
                 counter: if task.owns_stack { Some(COUNTERS[slot].load(Ordering::Relaxed)) } else { None },

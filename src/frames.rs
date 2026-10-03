@@ -158,6 +158,17 @@ impl<const WORDS: usize> FrameAllocator<WORDS> {
 
     /// Validate every frame first, so a bad request changes nothing.
     pub fn free_contiguous(&mut self, address: u64, count: usize) -> Result<(), FreeError> {
+        self.check_free(address, count)?;
+        let first = (address / FRAME_SIZE) as usize;
+        for frame in first..first + count {
+            self.free[frame / 64] |= 1 << (frame % 64);
+        }
+        self.free_frames += count;
+        Ok(())
+    }
+
+    /// Whether `free_contiguous(address, count)` would succeed.
+    pub fn check_free(&self, address: u64, count: usize) -> Result<(), FreeError> {
         if address % FRAME_SIZE != 0 {
             return Err(FreeError::Misaligned);
         }
@@ -173,10 +184,6 @@ impl<const WORDS: usize> FrameAllocator<WORDS> {
                 return Err(FreeError::AlreadyFree);
             }
         }
-        for frame in first..first + count {
-            self.free[frame / 64] |= 1 << (frame % 64);
-        }
-        self.free_frames += count;
         Ok(())
     }
 }
@@ -285,6 +292,8 @@ mod tests {
         assert_eq!(frames.free(64 * FRAME_SIZE), Err(FreeError::NotManaged));
         assert_eq!(frames.free(u64::MAX & !(FRAME_SIZE - 1)), Err(FreeError::NotManaged));
         assert_eq!(frames.free(0x3000), Err(FreeError::AlreadyFree));
+        assert_eq!(frames.check_free(0x1000, 1), Ok(()));
+        assert_eq!(frames.check_free(0x3000, 1), Err(FreeError::AlreadyFree));
         // The second frame is already free, so the first must stay allocated.
         assert_eq!(frames.free_contiguous(0x2000, 2), Err(FreeError::AlreadyFree));
         assert!(!frames.is_free(0x2000));
