@@ -13,22 +13,57 @@ Network: unavailable (RTL8139 PCI device not found)
 Type help. English keyboard / ASCII input.
 READY
 tane> help
-help | about | uptime | clear  This list | the kernel | time since boot
-echo TEXT | calc A OP B        Print text | integer + - * / (calc 12 * 3)
-sleep MS                       Block the shell for MS ms (0-60000)
-mem | alloc | free ADDR        Memory map | take a zeroed frame | return it
-ps | top                       Tasks | per-domain resource use and limits
-spawn spin|beat|once | kill N  Start a task | stop one, freeing its stack
-disk | format                  Disk status | create an empty TaneFS (admin)
-ls | cat NAME | rm NAME        Files you may read | show one | delete one
-write NAME TEXT | append ...   Replace or extend a file, creating it
-net | net ping IP              Network status | IPv4/IPv6 echo (admin)
-  --count N --timeout MS       1-10 probes, 1-5000 ms each; Ctrl-C cancels
-sec | audit | drop             Policy | denials (admin) | lower to user
-fault KIND                     Exception check: bp de ud gp pf df null ro nx
-reboot | halt                  Restart | stop the CPU (admin)
+Tane shell: literal words, typed records, checked effects.
+  help [OPERATION]         List commands or inspect one command's contract.
+  about                    Describe the kernel and shell.
+  status                   Read the preceding command's result code, operation and message.
+  mem                      Read physical-memory usage.
+  clear                    Clear the terminal display.
+  halt                     Stop the processor until reset.
+  reboot                   Restart the machine.
+  uptime                   Read elapsed milliseconds since boot.
+  alloc                    Allocate and register one physical frame.
+  task list                Read task identities, state and ownership.
+  sec                      Read the current domain and mandatory-access policy.
+  top                      Read domain resource use and quotas.
+  audit                    Read the bounded log of denied operations.
+  drop                     Irreversibly lower this shell to the user domain until reboot.
+  disk                     Read block-device and filesystem status.
+  net status               Read NIC, address and neighbor status.
+  net ping IP [--count 1-10] [--timeout 1-5000] Send bounded ICMP echo requests; Ctrl-C cancels.
+  file format              Create an empty filesystem, replacing its current contents.
+  file list                Read file names, byte lengths and owners.
+  file read NAME           Read one file as literal text.
+  file write NAME [TEXT]   Create or replace one file with literal text.
+  file append NAME TEXT    Append literal text to an existing or new file.
+  file remove NAME         Remove one named file.
+  echo [TEXT ...]          Emit decoded words as one literal text result.
+  calc I64 (+|-|*|/) I64   Perform checked signed-integer arithmetic.
+  sleep MS                 Sleep for 0-60000 milliseconds while other tasks run.
+  fault bp|de|ud|gp|pf|df|null|ro|nx Raise a diagnostic CPU exception; some modes stop the system.
+  free ADDR                Release a registered physical frame (decimal or 0x hex address).
+  task spawn spin|beat|once Start one bounded demonstration task.
+  task kill PID            Stop an owned non-kernel demonstration task.
+  ops                      Read operation names, contracts, effects and result schemas.
+  vars                     Read the shell's bounded variable store.
+  let NAME VALUE           Set one literal variable; expansion never reparses its value.
+  unset NAME               Remove one shell variable.
+  history                  Read bounded recent command lines.
+  run NAME                 Run a file as one pipeline per line; stop at the first failure.
+  plan file write|append|remove NAME [TEXT] Hold one literal file mutation with its creator and verified target identity.
+  show                     Show the currently held plan.
+  apply [ID]               Consume the held plan once; recheck its domain, revision, target and permissions.
+  where FIELD OP VALUE     Filter typed rows with == != < <= > >=.
+  select FIELD ...         Project typed rows onto named columns.
+  sort FIELD [--desc]      Sort bounded typed rows by one column; ascending by default.
+  take COUNT               Keep at most COUNT typed input rows.
+  count                    Return the number of typed input rows.
+  json                     Render typed rows as escaped JSON.
+  save NAME                Write the rendered pipeline result to one file.
+Quotes: 'literal', "$NAME", \n/\t. Pipes carry typed records; expansion never runs code.
+Bounds: 255 input bytes, 8 stages, 48 words, 64 rows, 8 columns, 64 text bytes.
 tane> about
-Tane OS 0.6 - a small original Rust kernel.
+Tane OS 0.7 - a small original Rust kernel with Tane Shell.
 No Linux code, GRUB, external crates, libc, or host OS calls.
 Firmware loads our 512-byte boot sector; it loads this kernel.
 Ring 0, own GDT/TSS/IDT, PIT at 100 Hz, E820 RAM in 4 KiB frames.
@@ -36,16 +71,17 @@ Preemptive round-robin kernel tasks with stacks from the frame allocator.
 W^X paging, NX data, table-driven MAC, per-domain quotas, audit log.
 ATA disk with TaneFS: labelled, checksummed files that survive reboots.
 RTL8139, ARP/IPv4/ICMP, NDP/IPv6/ICMPv6; static network configuration.
+Tane Shell: bounded editor, typed records, pipelines, preview and explicit apply.
 CPU exceptions print registers; all tasks share ring 0 and one address space.
 tane> mem
 Page tables: in kernel BSS (the boot sector's at 0x1000..0x4000 are retired)
 E820 table:  0x5000..0x5610 (written by the boot sector)
 Boot sector: 0x7c00..0x7e00
-Kernel:      0x10000..0x4b001 (241665 bytes incl. BSS)
+Kernel:      0x10000..0x720f0 (401648 bytes incl. BSS)
 Shell stack: 0x80000..0x90000 (grows down)
 VGA text:    0xb8000
 First 1 GiB identity mapped: 4 KiB pages below 2 MiB, then 2 MiB pages.
-No heap. Command buffer: 128 bytes (max 127 input).
+No heap. Command buffer: 255 bytes (max 255 input).
 BIOS E820 map (7 entries):
   0x0000000000..0x000009fc00       639 KiB usable
   0x000009fc00..0x00000a0000         1 KiB reserved
@@ -72,7 +108,7 @@ tane> calc -9223372036854775808 + 0
 tane> calc -9223372036854775808 / -1
 error: i64 overflow
 tane> nonsense
-Unknown command. Type help.
+error: unknown operation; type help
 tane> 
 tane> echo baX ck
 back
@@ -81,24 +117,24 @@ back
 tane> echo crlf
 crlf
 tane> uptime
-up 0.52 s (52 timer ticks at 100 Hz)
+up 0.56 s (56 timer ticks at 100 Hz)
 tane> sleep 500
 slept 500 ms
 tane> uptime
-up 1.07 s (107 timer ticks at 100 Hz)
+up 1.10 s (110 timer ticks at 100 Hz)
 tane> sleep 60001
 error: usage: sleep MS (0-60000)
 tane> fault bp
 
 CPU EXCEPTION 3 #BP: Breakpoint
 task: pid 1 (shell)
-rip=0000000000012850 cs=0008 rflags=0000000000000202
-rsp=000000000008edd0 ss=0010
-rax=0000000000000000 rbx=0000000000000000 rcx=0000000000000002
-rdx=0000000000000003 rsi=0000000000000002 rdi=0000000000000001
-rbp=0000000000000001 r8 =0000000000000000 r9 =0000000000000005
-r10=0000000000000003 r11=0000000000000003 r12=00000000000b8000
-r13=00000000000050b8 r14=000000000008efc8 r15=0000000000000008
+rip=0000000000013dc3 cs=0008 rflags=0000000000000202
+rsp=000000000008d6f8 ss=0010
+rax=0000000000000000 rbx=000000000008f302 rcx=0000000000000002
+rdx=0000000000000003 rsi=0000000000000002 rdi=0000000000000000
+rbp=0000000000000000 r8 =0000000000000000 r9 =0000000000000005
+r10=0000000000000003 r11=0000000000000003 r12=0000000000000001
+r13=000000000000001a r14=000000000008f310 r15=000000000008ec38
 Breakpoint handled; resuming.
 returned to the shell after the exception
 tane> echo after breakpoint
@@ -127,7 +163,7 @@ SLOT LABEL    SIZE  GEN NAME
 tane> cat missing
 error: no such file
 tane> write a/b x
-error: name must be 1-47 of A-Z a-z 0-9 . _ -
+error: invalid TaneFS name
 tane> rm notes.txt
 removed notes.txt
 tane> ls
@@ -137,11 +173,11 @@ tane> mem
 Page tables: in kernel BSS (the boot sector's at 0x1000..0x4000 are retired)
 E820 table:  0x5000..0x5610 (written by the boot sector)
 Boot sector: 0x7c00..0x7e00
-Kernel:      0x10000..0x4b001 (241665 bytes incl. BSS)
+Kernel:      0x10000..0x720f0 (401648 bytes incl. BSS)
 Shell stack: 0x80000..0x90000 (grows down)
 VGA text:    0xb8000
 First 1 GiB identity mapped: 4 KiB pages below 2 MiB, then 2 MiB pages.
-No heap. Command buffer: 128 bytes (max 127 input).
+No heap. Command buffer: 255 bytes (max 255 input).
 BIOS E820 map (7 entries):
   0x0000000000..0x000009fc00       639 KiB usable
   0x000009fc00..0x00000a0000         1 KiB reserved
@@ -164,7 +200,7 @@ error: 0x1000: not a managed RAM frame
 tane> free 1052673
 error: 0x101001: address is not 4 KiB aligned
 tane> free 0x
-error: usage: free ADDR (0x hex or decimal)
+error: invalid hexadecimal address
 tane> free 1052672
 freed 0x101000; 16096 frames free
 tane> spawn spin
@@ -175,10 +211,10 @@ tane> spawn beat
 started beat as pid 4 in domain admin
 tane> ps
 PID NAME   DOMAIN STATE       CPU s     COUNTER  STACK
-  1 shell  admin  running      0.25           -  0x80000 (kernel)
-  0 idle   kernel ready        1.69           -  0x44520 (kernel)
-  2 spin   admin  ready        0.06    14496742  0x102000 (4 frames)
-  3 spin   admin  ready        0.01     2635631  0x106000 (4 frames)
+  1 shell  admin  running      0.35           -  0x80000 (kernel)
+  0 idle   kernel ready        1.55           -  0x62630 (kernel)
+  2 spin   admin  ready        0.05    12275712  0x102000 (4 frames)
+  3 spin   admin  ready        0.01     2105165  0x106000 (4 frames)
   4 beat   admin  sleeping     0.00           0  0x10a000 (4 frames)
 tane> echo busy
 busy
@@ -188,29 +224,29 @@ tane> sleep 500
 slept 500 ms
 tane> ps
 PID NAME   DOMAIN STATE       CPU s     COUNTER  STACK
-  1 shell  admin  running      0.26           -  0x80000 (kernel)
-  0 idle   kernel ready        1.69           -  0x44520 (kernel)
-  2 spin   admin  ready        0.58   122834764  0x102000 (4 frames)
-  3 spin   admin  ready        0.48   100965585  0x106000 (4 frames)
-  4 beat   admin  sleeping     0.00           9  0x10a000 (4 frames)
+  1 shell  admin  running      0.36           -  0x80000 (kernel)
+  0 idle   kernel ready        1.55           -  0x62630 (kernel)
+  2 spin   admin  ready        0.71   148137587  0x102000 (4 frames)
+  3 spin   admin  ready        0.33    75642250  0x106000 (4 frames)
+  4 beat   admin  ready        0.00           7  0x10a000 (4 frames)
 tane> ps
 PID NAME   DOMAIN STATE       CPU s     COUNTER  STACK
-  1 shell  admin  running      0.28           -  0x80000 (kernel)
-  0 idle   kernel ready        1.69           -  0x44520 (kernel)
-  2 spin   admin  ready        0.60   128562890  0x102000 (4 frames)
-  3 spin   admin  ready        0.50   105157458  0x106000 (4 frames)
-  4 beat   admin  sleeping     0.00          10  0x10a000 (4 frames)
+  1 shell  admin  running      0.37           -  0x80000 (kernel)
+  0 idle   kernel ready        1.55           -  0x62630 (kernel)
+  2 spin   admin  ready        0.71   149213463  0x102000 (4 frames)
+  3 spin   admin  ready        0.33    75642250  0x106000 (4 frames)
+  4 beat   admin  ready        0.00           7  0x10a000 (4 frames)
 tane> free 0x104000
 error: 0x104000 is in the stack of pid 2; use kill
 tane> mem
 Page tables: in kernel BSS (the boot sector's at 0x1000..0x4000 are retired)
 E820 table:  0x5000..0x5610 (written by the boot sector)
 Boot sector: 0x7c00..0x7e00
-Kernel:      0x10000..0x4b001 (241665 bytes incl. BSS)
+Kernel:      0x10000..0x720f0 (401648 bytes incl. BSS)
 Shell stack: 0x80000..0x90000 (grows down)
 VGA text:    0xb8000
 First 1 GiB identity mapped: 4 KiB pages below 2 MiB, then 2 MiB pages.
-No heap. Command buffer: 128 bytes (max 127 input).
+No heap. Command buffer: 255 bytes (max 255 input).
 BIOS E820 map (7 entries):
   0x0000000000..0x000009fc00       639 KiB usable
   0x000009fc00..0x00000a0000         1 KiB reserved
@@ -224,30 +260,30 @@ tane> spawn once
 started once as pid 5 in domain admin
 tane> ps
 PID NAME   DOMAIN STATE       CPU s     COUNTER  STACK
-  1 shell  admin  running      0.29           -  0x80000 (kernel)
-  0 idle   kernel ready        1.69           -  0x44520 (kernel)
-  2 spin   admin  ready        0.69   143045232  0x102000 (4 frames)
-  3 spin   admin  ready        0.52   110409009  0x106000 (4 frames)
-  4 beat   admin  sleeping     0.00          11  0x10a000 (4 frames)
+  1 shell  admin  running      0.41           -  0x80000 (kernel)
+  0 idle   kernel ready        1.55           -  0x62630 (kernel)
+  2 spin   admin  ready        0.79   166993483  0x102000 (4 frames)
+  3 spin   admin  ready        0.37    86184880  0x106000 (4 frames)
+  4 beat   admin  sleeping     0.00           9  0x10a000 (4 frames)
   5 once   admin  ready        0.00           0  0x10e000 (4 frames)
 tane> sleep 600
 slept 600 ms
 tane> ps
 PID NAME   DOMAIN STATE       CPU s     COUNTER  STACK
-  1 shell  admin  running      0.30           -  0x80000 (kernel)
-  0 idle   kernel ready        1.69           -  0x44520 (kernel)
-  2 spin   admin  ready        1.02   206604271  0x102000 (4 frames)
-  3 spin   admin  ready        0.83   170383295  0x106000 (4 frames)
-  4 beat   admin  sleeping     0.00          17  0x10a000 (4 frames)
+  1 shell  admin  running      0.42           -  0x80000 (kernel)
+  0 idle   kernel ready        1.55           -  0x62630 (kernel)
+  2 spin   admin  ready        1.14   244381422  0x102000 (4 frames)
+  3 spin   admin  ready        0.66   150608777  0x106000 (4 frames)
+  4 beat   admin  sleeping     0.00          15  0x10a000 (4 frames)
 tane> mem
 Page tables: in kernel BSS (the boot sector's at 0x1000..0x4000 are retired)
 E820 table:  0x5000..0x5610 (written by the boot sector)
 Boot sector: 0x7c00..0x7e00
-Kernel:      0x10000..0x4b001 (241665 bytes incl. BSS)
+Kernel:      0x10000..0x720f0 (401648 bytes incl. BSS)
 Shell stack: 0x80000..0x90000 (grows down)
 VGA text:    0xb8000
 First 1 GiB identity mapped: 4 KiB pages below 2 MiB, then 2 MiB pages.
-No heap. Command buffer: 128 bytes (max 127 input).
+No heap. Command buffer: 255 bytes (max 255 input).
 BIOS E820 map (7 entries):
   0x0000000000..0x000009fc00       639 KiB usable
   0x000009fc00..0x00000a0000         1 KiB reserved
@@ -275,14 +311,14 @@ tane> spawn beat
 error: task table is full (8 tasks)
 tane> ps
 PID NAME   DOMAIN STATE       CPU s     COUNTER  STACK
-  1 shell  admin  running      0.37           -  0x80000 (kernel)
-  0 idle   kernel ready        1.69           -  0x44520 (kernel)
-  2 spin   admin  ready        1.19   238170596  0x102000 (4 frames)
-  3 spin   admin  ready        0.86   177975718  0x106000 (4 frames)
-  4 beat   admin  sleeping     0.00          19  0x10a000 (4 frames)
-  6 beat   admin  sleeping     0.00           1  0x112000 (4 frames)
-  7 beat   admin  sleeping     0.00           0  0x116000 (4 frames)
-  8 beat   admin  sleeping     0.00           0  0x11a000 (4 frames)
+  1 shell  admin  running      0.47           -  0x80000 (kernel)
+  0 idle   kernel ready        1.55           -  0x62630 (kernel)
+  2 spin   admin  ready        1.30   275108421  0x102000 (4 frames)
+  3 spin   admin  ready        0.66   153222281  0x106000 (4 frames)
+  4 beat   admin  ready        0.00          15  0x10a000 (4 frames)
+  6 beat   admin  ready        0.00           0  0x112000 (4 frames)
+  7 beat   admin  ready        0.00           0  0x116000 (4 frames)
+  8 beat   admin  ready        0.00           0  0x11a000 (4 frames)
 tane> kill 2
 killed pid 2 (spin); 16076 frames free
 tane> kill 3
@@ -297,17 +333,17 @@ tane> kill 8
 killed pid 8 (beat); 16096 frames free
 tane> ps
 PID NAME   DOMAIN STATE       CPU s     COUNTER  STACK
-  1 shell  admin  running      0.40           -  0x80000 (kernel)
-  0 idle   kernel ready        1.74           -  0x44520 (kernel)
+  1 shell  admin  running      0.49           -  0x80000 (kernel)
+  0 idle   kernel ready        1.61           -  0x62630 (kernel)
 tane> mem
 Page tables: in kernel BSS (the boot sector's at 0x1000..0x4000 are retired)
 E820 table:  0x5000..0x5610 (written by the boot sector)
 Boot sector: 0x7c00..0x7e00
-Kernel:      0x10000..0x4b001 (241665 bytes incl. BSS)
+Kernel:      0x10000..0x720f0 (401648 bytes incl. BSS)
 Shell stack: 0x80000..0x90000 (grows down)
 VGA text:    0xb8000
 First 1 GiB identity mapped: 4 KiB pages below 2 MiB, then 2 MiB pages.
-No heap. Command buffer: 128 bytes (max 127 input).
+No heap. Command buffer: 255 bytes (max 255 input).
 BIOS E820 map (7 entries):
   0x0000000000..0x000009fc00       639 KiB usable
   0x000009fc00..0x00000a0000         1 KiB reserved
@@ -317,8 +353,8 @@ BIOS E820 map (7 entries):
   0x00fffc0000..0x0100000000       256 KiB reserved
   0xfd00000000..0x10000000000  12582912 KiB reserved
 Frames: 16096 usable, 16096 free, 0 in use (4 KiB each, 1 MiB..1 GiB)
-tane> echo XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+tane> echo XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+error: input line too long (maximum 255 bytes); command rejected
 tane> echo recovered
 recovered
 tane> echo scroll-00
@@ -388,7 +424,7 @@ A!
 tane> clear
 [2J[Htane> sec
 Subject: pid 1 (shell) in domain admin
-Paging:  NX on | text 0x10000..0x22000 read-only | rodata read-only | data NX
+Paging:  NX on | text 0x10000..0x32000 read-only | rodata read-only | data NX
          page 0 unmapped | CR0.WP on | IST1 stack for #DF | stack canaries
 MAC:     enforcing; this table is the whole policy (compiled in):
   admin  system halt reboot fault audit format 
@@ -453,11 +489,11 @@ tane> mem
 Page tables: in kernel BSS (the boot sector's at 0x1000..0x4000 are retired)
 E820 table:  0x5000..0x5610 (written by the boot sector)
 Boot sector: 0x7c00..0x7e00
-Kernel:      0x10000..0x4b001 (241665 bytes incl. BSS)
+Kernel:      0x10000..0x720f0 (401648 bytes incl. BSS)
 Shell stack: 0x80000..0x90000 (grows down)
 VGA text:    0xb8000
 First 1 GiB identity mapped: 4 KiB pages below 2 MiB, then 2 MiB pages.
-No heap. Command buffer: 128 bytes (max 127 input).
+No heap. Command buffer: 255 bytes (max 255 input).
 BIOS E820 map (7 entries):
   0x0000000000..0x000009fc00       639 KiB usable
   0x000009fc00..0x00000a0000         1 KiB reserved
@@ -504,9 +540,9 @@ tane$ spawn beat
 started beat as pid 3 in domain user
 tane$ ps
 PID NAME   DOMAIN STATE       CPU s     COUNTER  STACK
-  1 shell  user   running      0.08           -  0x80000 (kernel)
-  0 idle   kernel ready        0.10           -  0x44520 (kernel)
-  2 spin   admin  ready        0.31    63221479  0x101000 (4 frames)
+  1 shell  user   running      0.06           -  0x80000 (kernel)
+  0 idle   kernel ready        0.11           -  0x62630 (kernel)
+  2 spin   admin  ready        0.31    57486714  0x101000 (4 frames)
   3 beat   user   sleeping     0.00           0  0x106000 (4 frames)
 tane$ kill 3
 killed pid 3 (beat); 32475 frames free
@@ -597,10 +633,10 @@ killed pid 4 (spin); 32455 frames free
 tane$ drop
 already in domain user; no command raises a domain
 tane$ su
-Unknown command. Type help.
+error: unknown operation; type help
 tane$ sec
 Subject: pid 1 (shell) in domain user
-Paging:  NX on | text 0x10000..0x22000 read-only | rodata read-only | data NX
+Paging:  NX on | text 0x10000..0x32000 read-only | rodata read-only | data NX
          page 0 unmapped | CR0.WP on | IST1 stack for #DF | stack canaries
 MAC:     enforcing; this table is the whole policy (compiled in):
   admin  system halt reboot fault audit format 
@@ -650,13 +686,13 @@ tane> fault de
 
 CPU EXCEPTION 0 #DE: Divide error
 task: pid 1 (shell)
-rip=0000000000012d53 cs=0008 rflags=0000000000000246
-rsp=000000000008edd0 ss=0010
-rax=0000000000000001 rbx=0000000000000001 rcx=0000000000000000
+rip=0000000000013e05 cs=0008 rflags=0000000000000246
+rsp=000000000008d6f8 ss=0010
+rax=0000000000000001 rbx=000000000008f302 rcx=0000000000000000
 rdx=0000000000000000 rsi=0000000000000002 rdi=0000000000000001
 rbp=0000000000000001 r8 =0000000000000000 r9 =0000000000000005
-r10=0000000000000003 r11=0000000000000003 r12=00000000000b8000
-r13=000000000008ede0 r14=000000000008efc8 r15=0000000000000008
+r10=0000000000000003 r11=0000000000000003 r12=0000000000000001
+r13=000000000000001a r14=000000000008f310 r15=000000000008ec38
 HALTED
 
 --- QEMU fault-ud ---
@@ -676,13 +712,13 @@ tane> fault ud
 
 CPU EXCEPTION 6 #UD: Invalid opcode
 task: pid 1 (shell)
-rip=0000000000012d26 cs=0008 rflags=0000000000000202
-rsp=000000000008edd0 ss=0010
-rax=0000000000000002 rbx=0000000000000002 rcx=0000000000000002
-rdx=0000000000000003 rsi=0000000000000002 rdi=0000000000000001
-rbp=0000000000000001 r8 =0000000000000000 r9 =0000000000000005
-r10=0000000000000003 r11=0000000000000003 r12=00000000000b8000
-r13=000000000008ede0 r14=000000000008efc8 r15=0000000000000008
+rip=0000000000013dd8 cs=0008 rflags=0000000000000202
+rsp=000000000008d6f8 ss=0010
+rax=0000000000000002 rbx=000000000008f302 rcx=0000000000000002
+rdx=0000000000000003 rsi=0000000000000002 rdi=0000000000000002
+rbp=0000000000000002 r8 =0000000000000000 r9 =0000000000000005
+r10=0000000000000003 r11=0000000000000003 r12=0000000000000001
+r13=000000000000001a r14=000000000008f310 r15=000000000008ec38
 HALTED
 
 --- QEMU fault-gp ---
@@ -703,13 +739,13 @@ tane> fault gp
 CPU EXCEPTION 13 #GP: General protection fault
 task: pid 1 (shell)
 error=0x0
-rip=0000000000012d3b cs=0008 rflags=0000000000000202
-rsp=000000000008edd0 ss=0010
-rax=8000000000000000 rbx=0000000000000003 rcx=0000000000000002
-rdx=0000000000000003 rsi=0000000000000002 rdi=0000000000000001
-rbp=0000000000000001 r8 =0000000000000000 r9 =0000000000000005
-r10=0000000000000003 r11=0000000000000003 r12=00000000000b8000
-r13=000000000008ede0 r14=000000000008efc8 r15=0000000000000008
+rip=0000000000013ded cs=0008 rflags=0000000000000202
+rsp=000000000008d6f8 ss=0010
+rax=8000000000000000 rbx=000000000008f302 rcx=0000000000000002
+rdx=0000000000000003 rsi=0000000000000002 rdi=0000000000000003
+rbp=0000000000000003 r8 =0000000000000000 r9 =0000000000000005
+r10=0000000000000003 r11=0000000000000003 r12=0000000000000001
+r13=000000000000001a r14=000000000008f310 r15=000000000008ec38
 HALTED
 
 --- QEMU fault-pf ---
@@ -730,13 +766,13 @@ tane> fault pf
 CPU EXCEPTION 14 #PF: Page fault
 task: pid 1 (shell)
 error=0x0 (not-present read) cr2=0x0000000040000000
-rip=0000000000012d18 cs=0008 rflags=0000000000000202
-rsp=000000000008edd0 ss=0010
-rax=0000000040000000 rbx=0000000000000004 rcx=0000000000000002
-rdx=0000000000000003 rsi=0000000000000002 rdi=0000000000000001
-rbp=0000000000000001 r8 =0000000000000000 r9 =0000000000000005
-r10=0000000000000003 r11=0000000000000003 r12=00000000000b8000
-r13=000000000008ede0 r14=000000000008efc8 r15=0000000000000008
+rip=0000000000013dca cs=0008 rflags=0000000000000202
+rsp=000000000008d6f8 ss=0010
+rax=0000000040000000 rbx=000000000008f302 rcx=0000000000000002
+rdx=0000000000000003 rsi=0000000000000002 rdi=0000000000000004
+rbp=0000000000000004 r8 =0000000000000000 r9 =0000000000000005
+r10=0000000000000003 r11=0000000000000003 r12=0000000000000001
+r13=000000000000001a r14=000000000008f310 r15=000000000008ec38
 HALTED
 
 --- QEMU fault-df ---
@@ -757,13 +793,13 @@ tane> fault df
 CPU EXCEPTION 8 #DF: Double fault
 task: pid 1 (shell)
 error=0x0
-rip=0000000000012f11 cs=0008 rflags=0000000000000202
+rip=0000000000013e48 cs=0008 rflags=0000000000000202
 rsp=0000000040001000 ss=0010
-rax=0000000040001000 rbx=0000000000000005 rcx=0000000000000002
-rdx=0000000000000003 rsi=0000000000000002 rdi=0000000000000001
-rbp=0000000000000001 r8 =0000000000000000 r9 =0000000000000005
-r10=0000000000000003 r11=0000000000000003 r12=00000000000b8000
-r13=000000000008ede0 r14=000000000008efc8 r15=0000000000000008
+rax=0000000040001000 rbx=000000000008f302 rcx=0000000000000002
+rdx=0000000000000003 rsi=0000000000000002 rdi=0000000000000005
+rbp=0000000000000005 r8 =0000000000000000 r9 =0000000000000005
+r10=0000000000000003 r11=0000000000000003 r12=0000000000000001
+r13=000000000000001a r14=000000000008f310 r15=000000000008ec38
 HALTED
 
 --- QEMU fault-null ---
@@ -784,13 +820,13 @@ tane> fault null
 CPU EXCEPTION 14 #PF: Page fault
 task: pid 1 (shell)
 error=0x0 (not-present read) cr2=0x0000000000000000
-rip=0000000000012d2c cs=0008 rflags=0000000000000246
-rsp=000000000008edd0 ss=0010
-rax=0000000000000000 rbx=0000000000000006 rcx=0000000000000002
-rdx=0000000000000003 rsi=0000000000000002 rdi=0000000000000001
-rbp=0000000000000001 r8 =0000000000000000 r9 =0000000000000005
-r10=0000000000000003 r11=0000000000000003 r12=00000000000b8000
-r13=000000000008ede0 r14=000000000008efc8 r15=000000000000000a
+rip=0000000000013dde cs=0008 rflags=0000000000000246
+rsp=000000000008d6f8 ss=0010
+rax=0000000000000000 rbx=000000000008f302 rcx=0000000000000002
+rdx=0000000000000003 rsi=0000000000000002 rdi=0000000000000006
+rbp=0000000000000006 r8 =0000000000000000 r9 =0000000000000005
+r10=0000000000000003 r11=0000000000000003 r12=0000000000000001
+r13=000000000000001a r14=000000000008f310 r15=000000000008ec38
 HALTED
 
 --- QEMU fault-ro ---
@@ -811,13 +847,13 @@ tane> fault ro
 CPU EXCEPTION 14 #PF: Page fault
 task: pid 1 (shell)
 error=0x3 (protection write) cr2=0x0000000000010000
-rip=0000000000012d45 cs=0008 rflags=0000000000000202
-rsp=000000000008edd0 ss=0010
-rax=0000000000010000 rbx=0000000000000007 rcx=0000000000000002
-rdx=0000000000000003 rsi=0000000000000002 rdi=0000000000000001
-rbp=0000000000000001 r8 =0000000000000000 r9 =0000000000000005
-r10=0000000000000003 r11=0000000000000003 r12=00000000000b8000
-r13=000000000008ede0 r14=000000000008efc8 r15=0000000000000008
+rip=0000000000013df7 cs=0008 rflags=0000000000000202
+rsp=000000000008d6f8 ss=0010
+rax=0000000000010000 rbx=000000000008f302 rcx=0000000000000002
+rdx=0000000000000003 rsi=0000000000000002 rdi=0000000000000007
+rbp=0000000000000007 r8 =0000000000000000 r9 =0000000000000005
+r10=0000000000000003 r11=0000000000000003 r12=0000000000000001
+r13=000000000000001a r14=000000000008f310 r15=000000000008ec38
 HALTED
 
 --- QEMU fault-nx ---
@@ -837,14 +873,14 @@ tane> fault nx
 
 CPU EXCEPTION 14 #PF: Page fault
 task: pid 1 (shell)
-error=0x11 (protection read fetch) cr2=0x000000000002a000
-rip=000000000002a000 cs=0008 rflags=0000000000000202
-rsp=000000000008edc8 ss=0010
-rax=000000000002a000 rbx=0000000000000008 rcx=0000000000000002
-rdx=0000000000000003 rsi=0000000000000002 rdi=0000000000000001
-rbp=0000000000000001 r8 =0000000000000000 r9 =0000000000000005
-r10=0000000000000003 r11=0000000000000003 r12=00000000000b8000
-r13=000000000008ede0 r14=000000000008efc8 r15=0000000000000008
+error=0x11 (protection read fetch) cr2=0x0000000000042000
+rip=0000000000042000 cs=0008 rflags=0000000000000202
+rsp=000000000008d6f0 ss=0010
+rax=0000000000042000 rbx=000000000008f302 rcx=0000000000000002
+rdx=0000000000000003 rsi=0000000000000002 rdi=0000000000000008
+rbp=0000000000000008 r8 =0000000000000000 r9 =0000000000000005
+r10=0000000000000003 r11=0000000000000003 r12=0000000000000001
+r13=000000000000001a r14=000000000008f310 r15=000000000008ec38
 HALTED
 
 --- QEMU vga-only ---

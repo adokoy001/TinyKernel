@@ -1,0 +1,414 @@
+
+--- QEMU shell ---
+TANE OS / RUST BARE METAL
+Self-made BIOS loader + Rust kernel. External crates: 0.
+64-bit mode | VGA + COM1 | PS/2 keyboard | no heap
+RAM: 7 E820 entries | 16096 free 4 KiB frames (64384 KiB) above 1 MiB
+IDT: 32 exception handlers, #DF on IST1 | PIT timer 100 Hz
+Tasks: preemptive round robin, up to 8 tasks
+Protection: NX data | kernel text read-only | null page unmapped | CR0.WP
+MAC: enforcing compiled-in policy | shell domain admin (drop lowers it)
+Disk: ATA found; disk is not formatted (admin: format)
+Network: unavailable (RTL8139 PCI device not found)
+Type help. English keyboard / ASCII input.
+READY
+tane> format
+formatted: empty TaneFS, 32 files of up to 4096 bytes
+tane> net status | json
+[{"available":false,"mac":null,"ipv4":null,"ipv6":null,"rx":0,"tx":0,"dropped":0,"neighbors":0}]
+tane> echo 'hello | world'
+hello | world
+tane> echo "a\"b\\c"
+a"b\c
+tane> echo '' tail
+ tail
+tane> echo "$(file write quoted BAD)"
+$(file write quoted BAD)
+tane> file list | json
+[]
+tane> let literal "literal | file write injected BAD"
+set literal
+tane> echo $literal
+literal | file write injected BAD
+tane> file list | json
+[]
+tane> vars
+name     value
+literal  literal | file write injected BAD
+tane> unset literal
+unset literal
+tane> echo $literal
+error: variable is not defined at byte 5
+tane> let operation file
+set operation
+tane> $operation write generated BAD
+error: operation names must be literal
+tane> let subcommand write
+set subcommand
+tane> file $subcommand generated BAD
+error: subcommand names must be literal
+tane> file list | json
+[]
+tane> task list | json
+[{"pid":1,"name":"shell","domain":"admin","state":"running","cpu_ticks":4,"counter":null,"stack":524288},{"pid":0,"name":"idle","domain":"kernel","state":"ready","cpu_ticks":78,"counter":null,"stack":402992}]
+tane> task list | where domain == admin | select pid name | sort pid --desc | json
+[{"pid":1,"name":"shell"}]
+tane> task list | where domain == admin | select pid name | sort pid --desc | count
+count
+1
+tane> file write f10 0123456789
+created f10 (10 bytes, label admin)
+tane> file write f2 12
+created f2 (2 bytes, label admin)
+tane> file list | where bytes > 0 | select name bytes | sort bytes | json
+[{"name":"f2","bytes":2},{"name":"f10","bytes":10}]
+tane> file list | where bytes '>=' 10 | count
+count
+1
+tane> file list | where bytes >= 10 | count
+count
+1
+tane> file list | json
+[{"slot":0,"label":"admin","bytes":10,"generation":1,"name":"f10"},{"slot":1,"label":"admin","bytes":2,"generation":1,"name":"f2"}]
+tane> echo hi | bogus | save malformed
+error: unknown operation; type help
+tane> file list | json
+[{"slot":0,"label":"admin","bytes":10,"generation":1,"name":"f10"},{"slot":1,"label":"admin","bytes":2,"generation":1,"name":"f2"}]
+tane> file write forbidden data | where bytes == 1
+error: pipeline sources must be read operations or bounded ping
+tane> file list | json
+[{"slot":0,"label":"admin","bytes":10,"generation":1,"name":"f10"},{"slot":1,"label":"admin","bytes":2,"generation":1,"name":"f2"}]
+tane> file list | where unknown == 1 | save malformed
+error: unknown column
+tane> file list | json
+[{"slot":0,"label":"admin","bytes":10,"generation":1,"name":"f10"},{"slot":1,"label":"admin","bytes":2,"generation":1,"name":"f2"}]
+tane> file list | select unknown | save malformed
+error: unknown column
+tane> file list | json
+[{"slot":0,"label":"admin","bytes":10,"generation":1,"name":"f10"},{"slot":1,"label":"admin","bytes":2,"generation":1,"name":"f2"}]
+tane> file list | sort unknown | save malformed
+error: unknown column
+tane> file list | json
+[{"slot":0,"label":"admin","bytes":10,"generation":1,"name":"f10"},{"slot":1,"label":"admin","bytes":2,"generation":1,"name":"f2"}]
+tane> file list | count | where name == x | save malformed
+error: unknown column
+tane> file list | json
+[{"slot":0,"label":"admin","bytes":10,"generation":1,"name":"f10"},{"slot":1,"label":"admin","bytes":2,"generation":1,"name":"f2"}]
+tane> file list | save malformed | count
+error: save must be the final pipeline stage
+tane> file list | json
+[{"slot":0,"label":"admin","bytes":10,"generation":1,"name":"f10"},{"slot":1,"label":"admin","bytes":2,"generation":1,"name":"f2"}]
+tane> file list | | count
+error: pipe requires a command on each side at byte 12
+tane> file list | json
+[{"slot":0,"label":"admin","bytes":10,"generation":1,"name":"f10"},{"slot":1,"label":"admin","bytes":2,"generation":1,"name":"f2"}]
+tane> file list | count |
+error: pipe requires a command on each side at byte 19
+tane> file list | json
+[{"slot":0,"label":"admin","bytes":10,"generation":1,"name":"f10"},{"slot":1,"label":"admin","bytes":2,"generation":1,"name":"f2"}]
+tane> file write unterminated 'data
+error: quote is not closed at byte 24
+tane> file list | json
+[{"slot":0,"label":"admin","bytes":10,"generation":1,"name":"f10"},{"slot":1,"label":"admin","bytes":2,"generation":1,"name":"f2"}]
+tane> echo hi ; file write semicolon BAD
+error: shell operator is not supported at byte 8
+tane> file list | json
+[{"slot":0,"label":"admin","bytes":10,"generation":1,"name":"f10"},{"slot":1,"label":"admin","bytes":2,"generation":1,"name":"f2"}]
+tane> echo $(file write substitution BAD)
+error: shell operator is not supported at byte 5
+tane> file list | json
+[{"slot":0,"label":"admin","bytes":10,"generation":1,"name":"f10"},{"slot":1,"label":"admin","bytes":2,"generation":1,"name":"f2"}]
+tane> echo 'text | remains data' | save text.txt
+created text.txt (20 bytes)
+tane> file read text.txt
+text | remains data
+tane> file list | json
+[{"slot":0,"label":"admin","bytes":10,"generation":1,"name":"f10"},{"slot":1,"label":"admin","bytes":2,"generation":1,"name":"f2"},{"slot":2,"label":"admin","bytes":20,"generation":1,"name":"text.txt"}]
+tane> file list | select name bytes | json | save metadata.json
+created metadata.json (83 bytes)
+tane> file read metadata.json
+[{"name":"f10","bytes":10},{"name":"f2","bytes":2},{"name":"text.txt","bytes":20}]
+tane> file write invalid.tsh "file write invalid-first BAD\nnonsense"
+created invalid.tsh (37 bytes, label admin)
+tane> run invalid.tsh
+error: unknown operation; type help
+tane> file list | json
+[{"slot":0,"label":"admin","bytes":10,"generation":1,"name":"f10"},{"slot":1,"label":"admin","bytes":2,"generation":1,"name":"f2"},{"slot":2,"label":"admin","bytes":20,"generation":1,"name":"text.txt"},{"slot":3,"label":"admin","bytes":83,"generation":1,"name":"metadata.json"},{"slot":4,"label":"admin","bytes":37,"generation":1,"name":"invalid.tsh"}]
+tane> file write stop.tsh "file write first yes\nfile read absent.txt\nfile write later NO"
+created stop.tsh (61 bytes, label admin)
+tane> run stop.tsh
+created first (3 bytes, label admin)
+error: no such file
+stopped: stop.tsh line 2
+tane> file read first
+yes
+tane> file list | json
+[{"slot":0,"label":"admin","bytes":10,"generation":1,"name":"f10"},{"slot":1,"label":"admin","bytes":2,"generation":1,"name":"f2"},{"slot":2,"label":"admin","bytes":20,"generation":1,"name":"text.txt"},{"slot":3,"label":"admin","bytes":83,"generation":1,"name":"metadata.json"},{"slot":4,"label":"admin","bytes":37,"generation":1,"name":"invalid.tsh"},{"slot":5,"label":"admin","bytes":61,"generation":1,"name":"stop.tsh"},{"slot":6,"label":"admin","bytes":3,"generation":1,"name":"first"}]
+tane> file write recurse.tsh 'run recurse.tsh'
+created recurse.tsh (15 bytes, label admin)
+tane> run recurse.tsh
+error: script nesting exceeds 4
+stopped: recurse.tsh line 1
+stopped: recurse.tsh line 1
+stopped: recurse.tsh line 1
+stopped: recurse.tsh line 1
+tane> echo after recursion
+after recursion
+tane> file write binding.tsh "let delay 20\nsleep \$delay\necho bound-\${delay}"
+created binding.tsh (45 bytes, label admin)
+tane> run binding.tsh
+set delay
+slept 20 ms
+bound-20
+tane> file write depth4.tsh "file append depth-proof success\nfile list | where label == admin | select name bytes | sort bytes | take 32 | where bytes >= 0 | count | json\nfile read depth-proof"
+created depth4.tsh (163 bytes, label admin)
+tane> file write depth3.tsh 'run depth4.tsh'
+created depth3.tsh (14 bytes, label admin)
+tane> file write depth2.tsh 'run depth3.tsh'
+created depth2.tsh (14 bytes, label admin)
+tane> file write depth1.tsh 'run depth2.tsh'
+created depth1.tsh (14 bytes, label admin)
+tane> file list | json
+[{"slot":0,"label":"admin","bytes":10,"generation":1,"name":"f10"},{"slot":1,"label":"admin","bytes":2,"generation":1,"name":"f2"},{"slot":2,"label":"admin","bytes":20,"generation":1,"name":"text.txt"},{"slot":3,"label":"admin","bytes":83,"generation":1,"name":"metadata.json"},{"slot":4,"label":"admin","bytes":37,"generation":1,"name":"invalid.tsh"},{"slot":5,"label":"admin","bytes":61,"generation":1,"name":"stop.tsh"},{"slot":6,"label":"admin","bytes":3,"generation":1,"name":"first"},{"slot":7,"label":"admin","bytes":15,"generation":1,"name":"recurse.tsh"},{"slot":8,"label":"admin","bytes":45,"generation":1,"name":"binding.tsh"},{"slot":9,"label":"admin","bytes":163,"generation":1,"name":"depth4.tsh"},{"slot":10,"label":"admin","bytes":14,"generation":1,"name":"depth3.tsh"},{"slot":11,"label":"admin","bytes":14,"generation":1,"name":"depth2.tsh"},{"slot":12,"label":"admin","bytes":14,"generation":1,"name":"depth1.tsh"}]
+tane> run depth1.tsh
+created depth-proof (7 bytes, label admin)
+[{"count":14}]
+success
+tane> file write depth5.tsh 'file write depth-forbidden BAD'
+created depth5.tsh (30 bytes, label admin)
+tane> file write depth4.tsh 'run depth5.tsh'
+wrote depth4.tsh (14 bytes)
+tane> file list | json
+[{"slot":0,"label":"admin","bytes":10,"generation":1,"name":"f10"},{"slot":1,"label":"admin","bytes":2,"generation":1,"name":"f2"},{"slot":2,"label":"admin","bytes":20,"generation":1,"name":"text.txt"},{"slot":3,"label":"admin","bytes":83,"generation":1,"name":"metadata.json"},{"slot":4,"label":"admin","bytes":37,"generation":1,"name":"invalid.tsh"},{"slot":5,"label":"admin","bytes":61,"generation":1,"name":"stop.tsh"},{"slot":6,"label":"admin","bytes":3,"generation":1,"name":"first"},{"slot":7,"label":"admin","bytes":15,"generation":1,"name":"recurse.tsh"},{"slot":8,"label":"admin","bytes":45,"generation":1,"name":"binding.tsh"},{"slot":9,"label":"admin","bytes":14,"generation":2,"name":"depth4.tsh"},{"slot":10,"label":"admin","bytes":14,"generation":1,"name":"depth3.tsh"},{"slot":11,"label":"admin","bytes":14,"generation":1,"name":"depth2.tsh"},{"slot":12,"label":"admin","bytes":14,"generation":1,"name":"depth1.tsh"},{"slot":13,"label":"admin","bytes":7,"generation":1,"name":"depth-proof"},{"slot":14,"label":"admin","bytes":30,"generation":1,"name":"depth5.tsh"}]
+tane> run depth1.tsh
+error: script nesting exceeds 4
+stopped: depth4.tsh line 1
+stopped: depth3.tsh line 1
+stopped: depth2.tsh line 1
+stopped: depth1.tsh line 1
+tane> file list | json
+[{"slot":0,"label":"admin","bytes":10,"generation":1,"name":"f10"},{"slot":1,"label":"admin","bytes":2,"generation":1,"name":"f2"},{"slot":2,"label":"admin","bytes":20,"generation":1,"name":"text.txt"},{"slot":3,"label":"admin","bytes":83,"generation":1,"name":"metadata.json"},{"slot":4,"label":"admin","bytes":37,"generation":1,"name":"invalid.tsh"},{"slot":5,"label":"admin","bytes":61,"generation":1,"name":"stop.tsh"},{"slot":6,"label":"admin","bytes":3,"generation":1,"name":"first"},{"slot":7,"label":"admin","bytes":15,"generation":1,"name":"recurse.tsh"},{"slot":8,"label":"admin","bytes":45,"generation":1,"name":"binding.tsh"},{"slot":9,"label":"admin","bytes":14,"generation":2,"name":"depth4.tsh"},{"slot":10,"label":"admin","bytes":14,"generation":1,"name":"depth3.tsh"},{"slot":11,"label":"admin","bytes":14,"generation":1,"name":"depth2.tsh"},{"slot":12,"label":"admin","bytes":14,"generation":1,"name":"depth1.tsh"},{"slot":13,"label":"admin","bytes":7,"generation":1,"name":"depth-proof"},{"slot":14,"label":"admin","bytes":30,"generation":1,"name":"depth5.tsh"}]
+tane> echo after depth boundary
+after depth boundary
+tane> file write cancel.tsh "sleep 5000\nfile write skipped BAD"
+created cancel.tsh (33 bytes, label admin)
+tane> run cancel.tsh
+cancelled
+stopped: cancel.tsh line 1
+tane> status | json
+[{"code":"cancelled","operation":"run","message":"cancelled"}]
+tane> file list | json
+[{"slot":0,"label":"admin","bytes":10,"generation":1,"name":"f10"},{"slot":1,"label":"admin","bytes":2,"generation":1,"name":"f2"},{"slot":2,"label":"admin","bytes":20,"generation":1,"name":"text.txt"},{"slot":3,"label":"admin","bytes":83,"generation":1,"name":"metadata.json"},{"slot":4,"label":"admin","bytes":37,"generation":1,"name":"invalid.tsh"},{"slot":5,"label":"admin","bytes":61,"generation":1,"name":"stop.tsh"},{"slot":6,"label":"admin","bytes":3,"generation":1,"name":"first"},{"slot":7,"label":"admin","bytes":15,"generation":1,"name":"recurse.tsh"},{"slot":8,"label":"admin","bytes":45,"generation":1,"name":"binding.tsh"},{"slot":9,"label":"admin","bytes":14,"generation":2,"name":"depth4.tsh"},{"slot":10,"label":"admin","bytes":14,"generation":1,"name":"depth3.tsh"},{"slot":11,"label":"admin","bytes":14,"generation":1,"name":"depth2.tsh"},{"slot":12,"label":"admin","bytes":14,"generation":1,"name":"depth1.tsh"},{"slot":13,"label":"admin","bytes":7,"generation":1,"name":"depth-proof"},{"slot":14,"label":"admin","bytes":30,"generation":1,"name":"depth5.tsh"},{"slot":15,"label":"admin","bytes":33,"generation":1,"name":"cancel.tsh"}]
+tane> plan file write planned before
+planned #1; show to review, apply 1 to commit
+tane> show
+plan #1: file write planned | 6 bytes | domain admin | revision 19
+required: create
+before: absent
+payload: "before"
+tane> file list | json
+[{"slot":0,"label":"admin","bytes":10,"generation":1,"name":"f10"},{"slot":1,"label":"admin","bytes":2,"generation":1,"name":"f2"},{"slot":2,"label":"admin","bytes":20,"generation":1,"name":"text.txt"},{"slot":3,"label":"admin","bytes":83,"generation":1,"name":"metadata.json"},{"slot":4,"label":"admin","bytes":37,"generation":1,"name":"invalid.tsh"},{"slot":5,"label":"admin","bytes":61,"generation":1,"name":"stop.tsh"},{"slot":6,"label":"admin","bytes":3,"generation":1,"name":"first"},{"slot":7,"label":"admin","bytes":15,"generation":1,"name":"recurse.tsh"},{"slot":8,"label":"admin","bytes":45,"generation":1,"name":"binding.tsh"},{"slot":9,"label":"admin","bytes":14,"generation":2,"name":"depth4.tsh"},{"slot":10,"label":"admin","bytes":14,"generation":1,"name":"depth3.tsh"},{"slot":11,"label":"admin","bytes":14,"generation":1,"name":"depth2.tsh"},{"slot":12,"label":"admin","bytes":14,"generation":1,"name":"depth1.tsh"},{"slot":13,"label":"admin","bytes":7,"generation":1,"name":"depth-proof"},{"slot":14,"label":"admin","bytes":30,"generation":1,"name":"depth5.tsh"},{"slot":15,"label":"admin","bytes":33,"generation":1,"name":"cancel.tsh"}]
+tane> apply
+applied #1: committed
+tane> file read planned
+before
+tane> apply
+error: no pending plan
+tane> let payload 'later | file write rogue BAD'
+set payload
+tane> plan file write literal-plan $payload
+planned #2; show to review, apply 2 to commit
+tane> let payload changed
+set payload
+tane> apply
+applied #2: committed
+tane> file read literal-plan
+later | file write rogue BAD
+tane> file list | json
+[{"slot":0,"label":"admin","bytes":10,"generation":1,"name":"f10"},{"slot":1,"label":"admin","bytes":2,"generation":1,"name":"f2"},{"slot":2,"label":"admin","bytes":20,"generation":1,"name":"text.txt"},{"slot":3,"label":"admin","bytes":83,"generation":1,"name":"metadata.json"},{"slot":4,"label":"admin","bytes":37,"generation":1,"name":"invalid.tsh"},{"slot":5,"label":"admin","bytes":61,"generation":1,"name":"stop.tsh"},{"slot":6,"label":"admin","bytes":3,"generation":1,"name":"first"},{"slot":7,"label":"admin","bytes":15,"generation":1,"name":"recurse.tsh"},{"slot":8,"label":"admin","bytes":45,"generation":1,"name":"binding.tsh"},{"slot":9,"label":"admin","bytes":14,"generation":2,"name":"depth4.tsh"},{"slot":10,"label":"admin","bytes":14,"generation":1,"name":"depth3.tsh"},{"slot":11,"label":"admin","bytes":14,"generation":1,"name":"depth2.tsh"},{"slot":12,"label":"admin","bytes":14,"generation":1,"name":"depth1.tsh"},{"slot":13,"label":"admin","bytes":7,"generation":1,"name":"depth-proof"},{"slot":14,"label":"admin","bytes":30,"generation":1,"name":"depth5.tsh"},{"slot":15,"label":"admin","bytes":33,"generation":1,"name":"cancel.tsh"},{"slot":16,"label":"admin","bytes":6,"generation":1,"name":"planned"},{"slot":17,"label":"admin","bytes":28,"generation":1,"name":"literal-plan"}]
+tane> plan file write stale BAD
+planned #3; show to review, apply 3 to commit
+tane> file write intervening mutation
+created intervening (8 bytes, label admin)
+tane> apply
+error: storage changed since plan; plan consumed
+tane> file list | json
+[{"slot":0,"label":"admin","bytes":10,"generation":1,"name":"f10"},{"slot":1,"label":"admin","bytes":2,"generation":1,"name":"f2"},{"slot":2,"label":"admin","bytes":20,"generation":1,"name":"text.txt"},{"slot":3,"label":"admin","bytes":83,"generation":1,"name":"metadata.json"},{"slot":4,"label":"admin","bytes":37,"generation":1,"name":"invalid.tsh"},{"slot":5,"label":"admin","bytes":61,"generation":1,"name":"stop.tsh"},{"slot":6,"label":"admin","bytes":3,"generation":1,"name":"first"},{"slot":7,"label":"admin","bytes":15,"generation":1,"name":"recurse.tsh"},{"slot":8,"label":"admin","bytes":45,"generation":1,"name":"binding.tsh"},{"slot":9,"label":"admin","bytes":14,"generation":2,"name":"depth4.tsh"},{"slot":10,"label":"admin","bytes":14,"generation":1,"name":"depth3.tsh"},{"slot":11,"label":"admin","bytes":14,"generation":1,"name":"depth2.tsh"},{"slot":12,"label":"admin","bytes":14,"generation":1,"name":"depth1.tsh"},{"slot":13,"label":"admin","bytes":7,"generation":1,"name":"depth-proof"},{"slot":14,"label":"admin","bytes":30,"generation":1,"name":"depth5.tsh"},{"slot":15,"label":"admin","bytes":33,"generation":1,"name":"cancel.tsh"},{"slot":16,"label":"admin","bytes":6,"generation":1,"name":"planned"},{"slot":17,"label":"admin","bytes":28,"generation":1,"name":"literal-plan"},{"slot":18,"label":"admin","bytes":8,"generation":1,"name":"intervening"}]
+tane> help 'task list'
+task list
+Read task identities, state and ownership.
+effect: read | result: tasks | permission: all domains
+example: task list | select pid state
+aliases: ["ps", "tasks"]
+tane> help 'file write'
+file write NAME [TEXT]
+Create or replace one file with literal text.
+effect: write | result: unit | permission: file ownership and current domain's storage quota
+example: plan file write notes "hello world"
+aliases: ["write"]
+tane> ops | json
+[{"name":"help","effect":"read","result":"text","permission":"all domains"},{"name":"about","effect":"read","result":"text","permission":"all domains"},{"name":"status","effect":"read","result":"status","permission":"all domains"},{"name":"mem","effect":"read","result":"memory","permission":"all domains"},{"name":"clear","effect":"control","result":"unit","permission":"all domains"},{"name":"halt","effect":"control","result":"unit","permission":"admin only"},{"name":"reboot","effect":"control","result":"unit","permission":"admin only"},{"name":"uptime","effect":"read","result":"number","permission":"all domains"},{"name":"alloc","effect":"write","result":"number","permission":"current domain's memory quota"},{"name":"task list","effect":"read","result":"tasks","permission":"all domains"},{"name":"sec","effect":"read","result":"security","permission":"all domains"},{"name":"top","effect":"read","result":"resources","permission":"all domains"},{"name":"audit","effect":"read","result":"audit","permission":"admin only"},{"name":"drop","effect":"control","result":"unit","permission":"admin to user only"},{"name":"disk","effect":"read","result":"records","permission":"all domains"},{"name":"net status","effect":"read","result":"network","permission":"all domains"},{"name":"net ping","effect":"control","result":"records","permission":"admin only, checked before any network transmission"},{"name":"file format","effect":"write","result":"unit","permission":"admin only"},{"name":"file list","effect":"read","result":"files","permission":"all domains"},{"name":"file read","effect":"read","result":"text","permission":"admin: admin/user files; user: user files"},{"name":"file write","effect":"write","result":"unit","permission":"file ownership and current domain's storage quota"},{"name":"file append","effect":"write","result":"unit","permission":"file ownership and current domain's storage quota"},{"name":"file remove","effect":"write","result":"unit","permission":"admin: admin/user files; user: user files"},{"name":"echo","effect":"read","result":"text","permission":"all domains"},{"name":"calc","effect":"read","result":"number","permission":"all domains"},{"name":"sleep","effect":"control","result":"unit","permission":"all domains"},{"name":"fault","effect":"control","result":"unit","permission":"admin only"},{"name":"free","effect":"write","result":"unit","permission":"admin: admin/user frames; user: user frames"},{"name":"task spawn","effect":"write","result":"number","permission":"current domain's task quota"},{"name":"task kill","effect":"write","result":"unit","permission":"admin: admin/user tasks; user: user tasks"},{"name":"ops","effect":"read","result":"operations","permission":"all domains"},{"name":"vars","effect":"read","result":"variables","permission":"all domains"},{"name":"let","effect":"write","result":"unit","permission":"current shell only"},{"name":"unset","effect":"write","result":"unit","permission":"current shell only"},{"name":"history","effect":"read","result":"history","permission":"current shell only"},{"name":"run","effect":"control","result":"unit","permission":"readable file; every contained operation keeps its own checks"},{"name":"plan","effect":"control","result":"text","permission":"file read and mutation permissions; apply rechecks them"},{"name":"show","effect":"read","result":"text","permission":"current shell only"},{"name":"apply","effect":"control","result":"unit","permission":"file read and mutation permissions"},{"name":"where","effect":"read","result":"records","permission":"pipeline input only"},{"name":"select","effect":"read","result":"records","permission":"pipeline input only"},{"name":"sort","effect":"read","result":"records","permission":"pipeline input only"},{"name":"take","effect":"read","result":"records","permission":"pipeline input only"},{"name":"count","effect":"read","result":"number","permission":"pipeline input only"},{"name":"json","effect":"read","result":"text","permission":"pipeline input only"},{"name":"save","effect":"write","result":"unit","permission":"file ownership and current domain's storage quota"}]
+tane> file read absent-status.txt
+error: no such file
+tane> status | json
+[{"code":"error","operation":"file read","message":"command failed"}]
+tane> echo success
+success
+tane> status | json
+[{"code":"success","operation":"echo","message":"completed"}]
+tane> echo ac[Jtane> echo ac[13G[Jtane> echo abc[14G[15G
+abc
+tane> echo aXb[Jtane> echo aXb[14G[Jtane> echo aXb[13G[Jtane> echo ab[13G[14G
+ab
+tane> cho home[Jtane> cho home[7G[Jtane> echo home[8G[Jtane> echo home[16G!
+home!
+tane> echo wrong[Jtane> [7Gecho cleared
+cleared
+tane> echo keep wrong[Jtane> echo keep [17Gright
+keep right
+tane> ec[Jtane> echo [12Gcompleted
+completed
+tane> echo history-marker
+history-marker
+tane> [Jtane> echo history-marker[26G
+history-marker
+tane> echo draft[Jtane> echo history-marker[26G[Jtane> echo draft[17G
+draft
+tane> file write canceled BAD^C
+tane> file list | json
+[{"slot":0,"label":"admin","bytes":10,"generation":1,"name":"f10"},{"slot":1,"label":"admin","bytes":2,"generation":1,"name":"f2"},{"slot":2,"label":"admin","bytes":20,"generation":1,"name":"text.txt"},{"slot":3,"label":"admin","bytes":83,"generation":1,"name":"metadata.json"},{"slot":4,"label":"admin","bytes":37,"generation":1,"name":"invalid.tsh"},{"slot":5,"label":"admin","bytes":61,"generation":1,"name":"stop.tsh"},{"slot":6,"label":"admin","bytes":3,"generation":1,"name":"first"},{"slot":7,"label":"admin","bytes":15,"generation":1,"name":"recurse.tsh"},{"slot":8,"label":"admin","bytes":45,"generation":1,"name":"binding.tsh"},{"slot":9,"label":"admin","bytes":14,"generation":2,"name":"depth4.tsh"},{"slot":10,"label":"admin","bytes":14,"generation":1,"name":"depth3.tsh"},{"slot":11,"label":"admin","bytes":14,"generation":1,"name":"depth2.tsh"},{"slot":12,"label":"admin","bytes":14,"generation":1,"name":"depth1.tsh"},{"slot":13,"label":"admin","bytes":7,"generation":1,"name":"depth-proof"},{"slot":14,"label":"admin","bytes":30,"generation":1,"name":"depth5.tsh"},{"slot":15,"label":"admin","bytes":33,"generation":1,"name":"cancel.tsh"},{"slot":16,"label":"admin","bytes":6,"generation":1,"name":"planned"},{"slot":17,"label":"admin","bytes":28,"generation":1,"name":"literal-plan"},{"slot":18,"label":"admin","bytes":8,"generation":1,"name":"intervening"}]
+tane> echo ac[Jtane> echo ac[13G[Jtane> echo abc[14G[15G
+abc
+tane> echo wrap-start-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxac[3A[Jtane> echo wrap-start-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxac[20G[3A[Jtane> echo wrap-start-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxabc[21G[22G
+wrap-start-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxabc
+tane> history | json
+[{"id":1,"part":1,"command":"echo keep right"},{"id":2,"part":1,"command":"echo completed"},{"id":3,"part":1,"command":"echo history-marker"},{"id":4,"part":1,"command":"echo draft"},{"id":5,"part":1,"command":"file list | json"},{"id":6,"part":1,"command":"echo abc"},{"id":7,"part":1,"command":"echo wrap-start-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"},{"id":7,"part":2,"command":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"},{"id":7,"part":3,"command":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"},{"id":7,"part":4,"command":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxabc"},{"id":8,"part":1,"command":"history | json"}]
+tane> file write overflow XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+error: input line too long (maximum 255 bytes); command rejected
+tane> status | json
+[{"code":"error","operation":"input","message":"input line exceeds 255 bytes"}]
+tane> file list | json
+[{"slot":0,"label":"admin","bytes":10,"generation":1,"name":"f10"},{"slot":1,"label":"admin","bytes":2,"generation":1,"name":"f2"},{"slot":2,"label":"admin","bytes":20,"generation":1,"name":"text.txt"},{"slot":3,"label":"admin","bytes":83,"generation":1,"name":"metadata.json"},{"slot":4,"label":"admin","bytes":37,"generation":1,"name":"invalid.tsh"},{"slot":5,"label":"admin","bytes":61,"generation":1,"name":"stop.tsh"},{"slot":6,"label":"admin","bytes":3,"generation":1,"name":"first"},{"slot":7,"label":"admin","bytes":15,"generation":1,"name":"recurse.tsh"},{"slot":8,"label":"admin","bytes":45,"generation":1,"name":"binding.tsh"},{"slot":9,"label":"admin","bytes":14,"generation":2,"name":"depth4.tsh"},{"slot":10,"label":"admin","bytes":14,"generation":1,"name":"depth3.tsh"},{"slot":11,"label":"admin","bytes":14,"generation":1,"name":"depth2.tsh"},{"slot":12,"label":"admin","bytes":14,"generation":1,"name":"depth1.tsh"},{"slot":13,"label":"admin","bytes":7,"generation":1,"name":"depth-proof"},{"slot":14,"label":"admin","bytes":30,"generation":1,"name":"depth5.tsh"},{"slot":15,"label":"admin","bytes":33,"generation":1,"name":"cancel.tsh"},{"slot":16,"label":"admin","bytes":6,"generation":1,"name":"planned"},{"slot":17,"label":"admin","bytes":28,"generation":1,"name":"literal-plan"},{"slot":18,"label":"admin","bytes":8,"generation":1,"name":"intervening"}]
+tane> echo recovered
+recovered
+tane> let private admin-secret
+set private
+tane> echo history-secret
+history-secret
+tane> plan file write pinned BAD
+planned #4; show to review, apply 4 to commit
+tane> drop
+domain admin -> user; this cannot be undone until reboot
+tane$ apply
+error: no pending plan
+tane$ vars | json
+[]
+tane$ history | json
+[{"id":1,"part":1,"command":"apply"},{"id":2,"part":1,"command":"vars | json"},{"id":3,"part":1,"command":"history | json"}]
+tane$ file list | json
+[]
+tane$ file read first
+denied: user may not read objects of domain admin (MAC policy; audited)
+tane$ audit | json
+denied: user may not audit (MAC policy; audited)
+tane$ status | json
+[{"code":"denied","operation":"audit","message":"permission denied"}]
+tane$ audit | json | save denied-audit
+denied: user may not audit (MAC policy; audited)
+tane$ file list | json
+[]
+tane$ echo overwrite | save first
+denied: user may not write objects of domain admin (MAC policy; audited)
+tane$ run stop.tsh
+denied: user may not read objects of domain admin (MAC policy; audited)
+tane$ file write user.tsh "file read first\nfile write elevated BAD"
+created user.tsh (39 bytes, label user)
+tane$ run user.tsh
+denied: user may not read objects of domain admin (MAC policy; audited)
+stopped: user.tsh line 1
+tane$ file list | json
+[{"slot":19,"label":"user","bytes":39,"generation":1,"name":"user.tsh"}]
+tane$ echo user-data | save user.txt
+created user.txt (10 bytes)
+tane$ file read user.txt
+user-data
+tane$ file list | json
+[{"slot":19,"label":"user","bytes":39,"generation":1,"name":"user.tsh"},{"slot":20,"label":"user","bytes":10,"generation":1,"name":"user.txt"}]
+tane$ 
+--- QEMU shell-persistence ---
+TANE OS / RUST BARE METAL
+Self-made BIOS loader + Rust kernel. External crates: 0.
+64-bit mode | VGA + COM1 | PS/2 keyboard | no heap
+RAM: 7 E820 entries | 16096 free 4 KiB frames (64384 KiB) above 1 MiB
+IDT: 32 exception handlers, #DF on IST1 | PIT timer 100 Hz
+Tasks: preemptive round robin, up to 8 tasks
+Protection: NX data | kernel text read-only | null page unmapped | CR0.WP
+MAC: enforcing compiled-in policy | shell domain admin (drop lowers it)
+Disk: TaneFS mounted, 21 files
+Network: unavailable (RTL8139 PCI device not found)
+Type help. English keyboard / ASCII input.
+READY
+tane> file read first
+yes
+tane> file read user.txt
+user-data
+tane> file list | json
+[{"slot":0,"label":"admin","bytes":10,"generation":1,"name":"f10"},{"slot":1,"label":"admin","bytes":2,"generation":1,"name":"f2"},{"slot":2,"label":"admin","bytes":20,"generation":1,"name":"text.txt"},{"slot":3,"label":"admin","bytes":83,"generation":1,"name":"metadata.json"},{"slot":4,"label":"admin","bytes":37,"generation":1,"name":"invalid.tsh"},{"slot":5,"label":"admin","bytes":61,"generation":1,"name":"stop.tsh"},{"slot":6,"label":"admin","bytes":3,"generation":1,"name":"first"},{"slot":7,"label":"admin","bytes":15,"generation":1,"name":"recurse.tsh"},{"slot":8,"label":"admin","bytes":45,"generation":1,"name":"binding.tsh"},{"slot":9,"label":"admin","bytes":14,"generation":2,"name":"depth4.tsh"},{"slot":10,"label":"admin","bytes":14,"generation":1,"name":"depth3.tsh"},{"slot":11,"label":"admin","bytes":14,"generation":1,"name":"depth2.tsh"},{"slot":12,"label":"admin","bytes":14,"generation":1,"name":"depth1.tsh"},{"slot":13,"label":"admin","bytes":7,"generation":1,"name":"depth-proof"},{"slot":14,"label":"admin","bytes":30,"generation":1,"name":"depth5.tsh"},{"slot":15,"label":"admin","bytes":33,"generation":1,"name":"cancel.tsh"},{"slot":16,"label":"admin","bytes":6,"generation":1,"name":"planned"},{"slot":17,"label":"admin","bytes":28,"generation":1,"name":"literal-plan"},{"slot":18,"label":"admin","bytes":8,"generation":1,"name":"intervening"},{"slot":19,"label":"user","bytes":39,"generation":1,"name":"user.tsh"},{"slot":20,"label":"user","bytes":10,"generation":1,"name":"user.txt"}]
+tane> run stop.tsh
+wrote first (3 bytes)
+error: no such file
+stopped: stop.tsh line 2
+tane> 
+--- QEMU shell-peer ---
+TANE OS / RUST BARE METAL
+Self-made BIOS loader + Rust kernel. External crates: 0.
+64-bit mode | VGA + COM1 | PS/2 keyboard | no heap
+RAM: 7 E820 entries | 16096 free 4 KiB frames (64384 KiB) above 1 MiB
+IDT: 32 exception handlers, #DF on IST1 | PIT timer 100 Hz
+Tasks: preemptive round robin, up to 8 tasks
+Protection: NX data | kernel text read-only | null page unmapped | CR0.WP
+MAC: enforcing compiled-in policy | shell domain admin (drop lowers it)
+Disk: ATA found; disk is not formatted (admin: format)
+Network: RTL8139 MAC 52:54:00:12:34:56 | static IPv4 + IPv6
+Type help. English keyboard / ASCII input.
+READY
+tane> format
+formatted: empty TaneFS, 32 files of up to 4096 bytes
+tane> net status | json
+[{"available":true,"mac":"52:54:00:12:34:56","ipv4":"10.0.2.15","ipv6":"fd00::15","rx":0,"tx":0,"dropped":0,"neighbors":0}]
+tane> net ping 10.0.2.2 --count 2 --timeout 200 | where kind == reply | select source sequence rtt_ms | json
+[{"source":"10.0.2.2","sequence":1,"rtt_ms":10},{"source":"10.0.2.2","sequence":2,"rtt_ms":10}]
+tane> net ping fd00::2 --count 2 --timeout 200 | where kind == reply | select source sequence rtt_ms | json
+[{"source":"fd00::2","sequence":1,"rtt_ms":10},{"source":"fd00::2","sequence":2,"rtt_ms":10}]
+tane> net status | json
+[{"available":true,"mac":"52:54:00:12:34:56","ipv4":"10.0.2.15","ipv6":"fd00::15","rx":6,"tx":6,"dropped":0,"neighbors":2}]
+tane> net ping 10.0.2.2 --count 2 --timeout 100 | json
+[{"kind":"timeout","source":"10.0.2.2","sequence":1,"bytes":null,"ttl":null,"rtt_ms":null,"sent":null,"received":null},{"kind":"timeout","source":"10.0.2.2","sequence":2,"bytes":null,"ttl":null,"rtt_ms":null,"sent":null,"received":null},{"kind":"summary","source":"10.0.2.2","sequence":null,"bytes":null,"ttl":null,"rtt_ms":null,"sent":2,"received":0}]
+tane> status | json
+[{"code":"error","operation":"net ping","message":"command failed"}]
+tane> file write timeout.tsh "net ping 10.0.2.2 --count 1 --timeout 100 | json\nfile write after-timeout BAD"
+created timeout.tsh (77 bytes, label admin)
+tane> run timeout.tsh
+[{"kind":"timeout","source":"10.0.2.2","sequence":1,"bytes":null,"ttl":null,"rtt_ms":null,"sent":null,"received":null},{"kind":"summary","source":"10.0.2.2","sequence":null,"bytes":null,"ttl":null,"rtt_ms":null,"sent":1,"received":0}]
+stopped: timeout.tsh line 1
+tane> status | json
+[{"code":"error","operation":"run","message":"command failed"}]
+tane> file list | json
+[{"slot":0,"label":"admin","bytes":77,"generation":1,"name":"timeout.tsh"}]
+tane> net ping 10.0.2.2 --count 1 --timeout 200 | where kind == reply | json
+[{"kind":"reply","source":"10.0.2.2","sequence":1,"bytes":16,"ttl":64,"rtt_ms":10,"sent":null,"received":null}]
+tane> net ping 10.0.2.99 --count 1 --timeout 100 | nonsense
+error: unknown operation; type help
+tane> net ping fd00::99 --count 1 --timeout 100 | select unknown | json
+error: unknown column
+tane> net ping 10.0.2.99 --count 1 --timeout 100 | where unknown == 1 | json
+error: unknown column
+tane> drop
+domain admin -> user; this cannot be undone until reboot
+tane$ net ping 10.0.2.99 --count 1 --timeout 100 | json
+denied: user may not net-ping (MAC policy; audited)
+tane$ net ping fd00::99 --count 1 --timeout 100 | json
+denied: user may not net-ping (MAC policy; audited)
+tane$ net status | json
+[{"available":true,"mac":"52:54:00:12:34:56","ipv4":"10.0.2.15","ipv6":"fd00::15","rx":7,"tx":10,"dropped":0,"neighbors":2}]
+tane$ 

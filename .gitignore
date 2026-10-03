@@ -16,4 +16,9 @@ build/inet-tests
 build/pci-tests
 build/rtl8139-tests
 build/netstack-tests
+build/*-tests
+build/.*-tests.*
 tests/__pycache__/
+__pycache__/
+build/*-build.log
+build/*-run.txt

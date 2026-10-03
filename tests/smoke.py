@@ -89,7 +89,7 @@ class Machine:
             command += ["-L", os.environ["QEMU_DATADIR"]]
         command += [
             "-machine", "pc,accel=tcg", "-m", self.memory,
-            "-drive", f"file={OUT / 'tane-os.img'},format=raw,if=floppy",
+            "-drive", f"file={OUT / 'tane-os.img'},format=raw,if=floppy,readonly=on",
             "-boot", "order=a", "-display", "none", "-net", "none",
         ]
         if self.disk is not None:
@@ -374,13 +374,13 @@ def main():
         contains(result, b"MAC: enforcing compiled-in policy | shell domain admin (drop lowers it)")
         if b"COM1 not detected" in result:
             raise AssertionError("COM1 was not detected although QEMU provides it")
-        contains(machine.command(b"help\r"), b"calc A OP B")
+        contains(machine.command(b"help\r"), b"calc I64 (+|-|*|/) I64")
         about = machine.command(b"about\r")
         contains(about, b"CPU exceptions print registers; all tasks share ring 0 and one address space.")
         contains(about, b"RTL8139, ARP/IPv4/ICMP, NDP/IPv6/ICMPv6; static network configuration.")
         result = machine.command(b"mem\r")
         contains(result, b"First 1 GiB identity mapped: 4 KiB pages below 2 MiB, then 2 MiB pages.")
-        contains(result, b"Command buffer: 128 bytes (max 127 input).")
+        contains(result, b"Command buffer: 255 bytes (max 255 input).")
         checked("help/about/mem describe the running kernel")
 
         contains(machine.command(b"echo Rust works\r"), b"\r\nRust works\r\n")
@@ -398,7 +398,7 @@ def main():
             contains(machine.command(command), expected)
         checked("arithmetic handles signed limits, overflow and zero division")
 
-        contains(machine.command(b"nonsense\r"), b"Unknown command. Type help.")
+        contains(machine.command(b"nonsense\r"), b"error: unknown operation; type help")
         result = machine.command(b"\r")
         if result != b"\r\n" + PROMPT:
             raise AssertionError(f"Empty command emitted unexpected text: {result!r}")
@@ -447,7 +447,7 @@ def main():
         contains(result, b"   0 admin       8    3 notes.txt\r\n")
         contains(result, b"1 file(s) readable by domain admin")
         contains(machine.command(b"cat missing\r"), b"error: no such file")
-        contains(machine.command(b"write a/b x\r"), b"error: name must be 1-47 of A-Z a-z 0-9 . _ -")
+        contains(machine.command(b"write a/b x\r"), b"error: invalid TaneFS name")
         contains(machine.command(b"rm notes.txt\r"), b"removed notes.txt")
         contains(machine.command(b"ls\r"), b"0 file(s) readable by domain admin")
         checked("ATA disk: format, create, append, overwrite, cat, ls, rm")
@@ -464,7 +464,7 @@ def main():
         contains(machine.command(f"free 0x{a:x}\r".encode("ascii")), b"frame is already free")
         contains(machine.command(b"free 0x1000\r"), b"error: 0x1000: not a managed RAM frame")
         contains(machine.command(f"free {b + 1}\r".encode("ascii")), b"address is not 4 KiB aligned")
-        contains(machine.command(b"free 0x\r"), b"error: usage: free ADDR (0x hex or decimal)")
+        contains(machine.command(b"free 0x\r"), b"error: invalid hexadecimal address")
         contains(machine.command(f"free {b}\r".encode("ascii")), f"; {usable} frames free".encode("ascii"))
         checked("E820 RAM becomes 4 KiB frames; alloc/free validate addresses")
 
@@ -481,7 +481,9 @@ def main():
         for pid in spins:
             if after[pid][2] <= before[pid][2] or after[pid][3] <= before[pid][3]:
                 raise AssertionError(f"spin pid {pid} did not keep running: {before[pid]} -> {after[pid]}")
-        if after[beat][3] - before[beat][3] < 3 or after[beat][1] != b"sleeping" or after[beat][2] > 5:
+        # The sample can land just after the timer wakes beat, before its next
+        # dispatch. Both ready and sleeping are valid for this periodic task.
+        if after[beat][3] - before[beat][3] < 3 or after[beat][1] not in (b"ready", b"sleeping") or after[beat][2] > 5:
             raise AssertionError(f"beat should sleep between beats: {before[beat]} -> {after[beat]}")
         checked("timer preempts CPU-bound tasks; shell and sleepers stay responsive")
 
@@ -521,10 +523,10 @@ def main():
             raise AssertionError("Killing every task did not restore the frame pool")
         checked("exited and killed tasks return stacks; table limit and kill errors")
 
-        result = machine.command(b"echo " + b"X" * 160 + b"\r")
-        contains(result, b"\r\n" + b"X" * 122 + b"\r\n")
-        if b"X" * 123 in result:
-            raise AssertionError("Input was accepted beyond the 127 byte line limit")
+        result = machine.command(b"echo " + b"X" * 300 + b"\r")
+        contains(result, b"error: input line too long")
+        if b"\r\n" + b"X" * 250 + b"\r\n" in result:
+            raise AssertionError("An overflowing input executed its truncated prefix")
         contains(machine.command(b"echo recovered\r"), b"\r\nrecovered\r\n")
         checked("overlong input is bounded and the next command recovers")
 
@@ -645,7 +647,7 @@ def main():
             raise AssertionError(f"CPU split admin {admin_cpu}% / user {user_cpu}%, expected about 70/30: {result!r}")
         contains(reboot.command(f"kill {user_spin}\r".encode("ascii")), b"killed pid")
         contains(reboot.command(b"drop\r"), b"already in domain user; no command raises a domain")
-        contains(reboot.command(b"su\r"), b"Unknown command.")
+        contains(reboot.command(b"su\r"), b"error: unknown operation; type help")
         result = reboot.command(b"sec\r")
         contains(result, b"Subject: pid 1 (shell) in domain user")
         contains(result, b"Audit:   13 denials since boot (policy and quota).")

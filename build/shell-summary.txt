@@ -1,0 +1,30 @@
+Tane Shell v1 QEMU integration test
+Elapsed: 17.83s
+Transport (shell): local pipes (Unix sockets unavailable or disabled)
+Transport (shell-persistence): local pipes (Unix sockets unavailable or disabled)
+Transport (shell-peer): stdio + Ethernet socketpair
+PASS: Shell v1 boots with a real ATA disk
+PASS: Quotes, escapes and variable expansion preserve data without evaluation
+PASS: Task pipelines filter, project, sort and count structured records
+PASS: File metadata pipelines use numeric comparisons and numeric sorting
+PASS: Whole-pipeline validation rejects malformed stages before any source or sink effect
+PASS: Explicit save sinks persist text and serialized records
+PASS: TaneFS scripts stop on the first error and reject unbounded recursion
+PASS: 4 nested scripts execute a maximal pipeline; the next level fails without effects
+PASS: Ctrl-C cancels a sleeping script before its next effect
+PASS: Plans have no effect before apply; apply is one-shot and rejects stale state
+PASS: Operation discovery and help describe the same typed registry
+PASS: Structured status reports the preceding command's result
+PASS: Serial cursor editing, delete, history, draft restoration, controls and completion work
+PASS: PS/2 extended cursor keys share the same line editor
+PASS: Long-line cursor insertion survives VGA wrapping and scrolling
+PASS: Typed history splits and reconstructs a complete command at the line limit
+PASS: Input overflow rejects the entire command and the next line recovers
+PASS: MAC applies to pipeline sources, save sinks, scripts and domain-pinned plans
+PASS: Saved pipeline data and script contents persist across a fresh boot
+PASS: Typed network status reports the real RTL8139 and numeric counters
+PASS: IPv4 and IPv6 ping events remain typed through filtering, projection and JSON
+PASS: Typed timeouts retain records and failed status; scripts stop before the next write
+PASS: Invalid network pipeline stages are rejected before ARP, NDP or ICMP transmission
+PASS: User-domain typed network pipelines are denied before any packet emission
+RESULT: PASS

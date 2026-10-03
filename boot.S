@@ -1,10 +1,12 @@
 /*
  * Tane OS: original BIOS boot sector, no external bootloader.
  * GNU assembler, linked at 0x7c00. Boot as a 1.44 MiB floppy.
- * LBA 1..256 are copied to 0x10000..0x2ffff, then called in long mode.
+ * LBA 1..512 are copied to 0x10000..0x4ffff, then called in long mode.
  * The loader deliberately assumes the floppy geometry: 18 sectors, 2 heads.
  */
 .intel_syntax noprefix
+/* build.py reads this literal too; the loader and image limit stay in sync. */
+.equ KERNEL_SECTORS, 512
 .section .boot, "ax"
 .global boot_start
 .code16
@@ -26,7 +28,7 @@ real_start:
     mov es, ax
     xor bx, bx
     mov cx, 2                 /* cylinder 0, sector 2 (LBA 1) */
-    mov si, 256
+    mov si, KERNEL_SECTORS
     sti
 read_sector:
     mov bp, 3

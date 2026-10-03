@@ -13,6 +13,7 @@ macro_rules! kprintln {
 }
 
 mod ata;
+mod editor;
 mod frames;
 mod fs;
 mod interrupts;
@@ -20,15 +21,21 @@ mod inet;
 mod mac;
 mod net;
 mod netstack;
+mod operations;
 mod paging;
 mod pci;
+mod plans;
+mod records;
 mod resources;
 mod rtl8139;
 mod sched;
 mod security;
 mod shell;
+mod shell_lang;
+mod shell_runtime;
 mod storage;
 mod tasks;
+mod variables;
 
 use core::arch::asm;
 use core::fmt::{self, Write};
@@ -44,7 +51,6 @@ const VGA: *mut u16 = 0xb8000 as *mut u16;
 const WIDTH: usize = 80;
 const HEIGHT: usize = 25;
 const SERIAL: u16 = 0x3f8;
-const LINE_SIZE: usize = 128;
 /// The boot sector stores the BIOS E820 map here (see boot.S).
 const E820_COUNT: *const u16 = 0x5000 as *const u16;
 const E820_ENTRIES: *const E820Entry = 0x5010 as *const E820Entry;
@@ -66,7 +72,7 @@ static mut ALLOCATED: [Option<(u64, Domain)>; ALLOC_SLOTS] = [None; ALLOC_SLOTS]
 /// Bytes in the data section; `fault nx` jumps here to prove data is not executable.
 static mut NOT_CODE: [u8; 16] = [0xc3; 16]; // `ret` if it were ever executed
 
-static mut CONSOLE: Console = Console { x: 0, y: 0, color: 0x07 };
+static mut CONSOLE: Console = Console { x: 0, y: 0, color: 0x07, scrolls: 0 };
 static SERIAL_PRESENT: AtomicBool = AtomicBool::new(false);
 
 fn console() -> &'static mut Console {
@@ -149,47 +155,80 @@ pub extern "C" fn _start() -> ! {
     kprintln!("READY");
 
     let mut keyboard = Keyboard::new();
-    let mut line = [0u8; LINE_SIZE];
-    let mut used = 0;
-    let mut previous_was_cr = false;
+    let mut editor = editor::Editor::new();
     prompt();
+    let mut display = EditorDisplay::new();
     loop {
         net::poll();
         // Serial and PS/2 are both hardware drivers implemented here. Check
         // with IRQs off so an arriving byte cannot slip in before HLT.
         interrupts::disable();
-        let byte = unsafe { serial_read() }.or_else(|| keyboard.read());
+        // Keep physical navigation keys distinct from serial control bytes.
+        let serial = unsafe { serial_read() };
+        let physical = if serial.is_none() { keyboard.read_key() } else { None };
         interrupts::enable();
-        if let Some(b) = byte {
-            if b == b'\n' && previous_was_cr {
-                previous_was_cr = false;
-                continue;
-            }
-            previous_was_cr = b == b'\r';
-            match b {
-                b'\r' | b'\n' => {
+        if serial.is_some() || physical.is_some() {
+            let old_len = editor.length();
+            let old_cursor = editor.cursor();
+            let mut old_line = [0u8; editor::LINE_CAPACITY];
+            old_line[..old_len].copy_from_slice(editor.line().as_bytes());
+            let event = match (serial, physical) {
+                (Some(byte), _) => editor.feed(byte),
+                (_, Some(key)) => editor.feed_key(key),
+                _ => editor::Event::None,
+            };
+            match event {
+                editor::Event::Submit => {
+                    display.finish();
                     console().byte(b'\n');
-                    // Only printable ASCII bytes enter this buffer.
-                    let command = core::str::from_utf8(&line[..used]).unwrap_or("");
-                    execute(command, &mut keyboard);
-                    used = 0;
+                    if editor.overflowed() {
+                        kprintln!("error: input line too long (maximum {} bytes); command rejected", editor::LINE_CAPACITY);
+                        shell_runtime::reject_input();
+                    } else {
+                        // Runtime may erase privileged history after `drop`.
+                        // Keep its command independent of that mutable editor.
+                        let mut command = [0u8; editor::LINE_CAPACITY];
+                        let length = editor.length();
+                        command[..length].copy_from_slice(editor.line().as_bytes());
+                        let line = core::str::from_utf8(&command[..length]).unwrap_or("");
+                        shell_runtime::execute(line, &mut keyboard, &mut editor);
+                    }
+                    editor.clear();
                     prompt();
+                    display = EditorDisplay::new();
                 }
-                8 | 127 if used > 0 => {
-                    used -= 1;
-                    console().backspace();
-                }
-                3 => {
-                    used = 0;
+                editor::Event::Cancel => {
+                    display.finish();
+                    shell_runtime::cancel_input();
                     kprintln!("^C");
                     prompt();
+                    display = EditorDisplay::new();
                 }
-                b' '..=b'~' if used < LINE_SIZE - 1 => {
-                    line[used] = b;
-                    used += 1;
-                    console().byte(b);
+                editor::Event::Complete => {
+                    if shell_runtime::complete(&mut editor) {
+                        prompt();
+                        display = EditorDisplay::new();
+                    }
+                    display.redraw(editor.line(), editor.cursor());
                 }
-                _ => {} // Ignore controls and safely discard excess input.
+                editor::Event::Changed => {
+                    if old_cursor == old_len && editor.length() == old_len + 1
+                        && editor.cursor() == editor.length()
+                        && editor.line().as_bytes()[..old_len] == old_line[..old_len] {
+                        console().byte(editor.line().as_bytes()[old_len]);
+                        display.updated(&editor, true);
+                    } else if old_cursor == old_len && old_len > 0
+                        && editor.length() + 1 == old_len && editor.cursor() == editor.length()
+                        && editor.line().as_bytes() == &old_line[..editor.length()]
+                        && (6 + old_cursor) % WIDTH != 0 {
+                        console().backspace();
+                        display.updated(&editor, false);
+                    } else {
+                        display.redraw(editor.line(), editor.cursor());
+                    }
+                }
+                editor::Event::Full => unsafe { serial_write(7); },
+                editor::Event::None => {}
             }
         } else {
             if net::present() {
@@ -211,26 +250,120 @@ fn prompt() {
     console().color = 0x07;
 }
 
-fn execute(line: &str, keyboard: &mut Keyboard) {
-    match shell::parse(line) {
+/// The input anchor uses an absolute VGA row, so scrolling while a long line
+/// wraps does not lose the position of its beginning. Serial redraw assumes
+/// an 80-column ANSI terminal, matching the VGA console.
+struct EditorDisplay {
+    anchor: usize,
+    length: usize,
+    cursor: usize,
+    serial_pending_wrap: bool,
+}
+
+impl EditorDisplay {
+    fn new() -> Self {
+        let c = console();
+        Self { anchor: (c.scrolls + c.y) * WIDTH + c.x,
+            length: 0, cursor: 0, serial_pending_wrap: false }
+    }
+
+    fn updated(&mut self, editor: &editor::Editor, appended: bool) {
+        self.length = editor.length();
+        self.cursor = editor.cursor();
+        self.serial_pending_wrap = appended && (self.anchor + self.cursor) % WIDTH == 0;
+    }
+
+    fn serial_row(&self) -> usize {
+        let row = (self.anchor % WIDTH + self.cursor) / WIDTH;
+        if self.serial_pending_wrap { row.saturating_sub(1) } else { row }
+    }
+
+    fn serial_position(&mut self, cursor: usize) {
+        let current_row = self.serial_row();
+        let target_row = (self.anchor % WIDTH + cursor) / WIDTH;
+        unsafe { serial_write(b'\r'); }
+        if target_row < current_row { serial_csi(current_row - target_row, b'A'); }
+        else if target_row > current_row { serial_csi(target_row - current_row, b'B'); }
+        serial_csi((self.anchor + cursor) % WIDTH + 1, b'G');
+        self.cursor = cursor;
+        self.serial_pending_wrap = false;
+    }
+
+    fn redraw(&mut self, line: &str, cursor: usize) {
+        // Clear and repaint the input on the serial terminal, including all
+        // wrapped rows. Unsupported escape input never reaches this output.
+        let old_row = self.serial_row();
+        unsafe { serial_write(b'\r'); }
+        serial_csi(old_row, b'A');
+        for &byte in b"\x1b[Jtane" { unsafe { serial_write(byte); } }
+        unsafe {
+            serial_write(if tasks::current_domain() == Domain::Admin { b'>' } else { b'$' });
+            serial_write(b' ');
+        }
+        for byte in line.bytes() { unsafe { serial_write(byte); } }
+        self.cursor = line.len();
+        self.serial_pending_wrap = (self.anchor % WIDTH + line.len()) % WIDTH == 0;
+        self.serial_position(cursor);
+
+        let c = console();
+        let end_row = (self.anchor + line.len()) / WIDTH;
+        while end_row >= c.scrolls + HEIGHT { c.scroll_one(); }
+        let viewport = c.scrolls * WIDTH;
+        let span = self.length.max(line.len());
+        for index in 0..span {
+            let cell = self.anchor + index;
+            if cell >= viewport && cell < viewport + WIDTH * HEIGHT {
+                unsafe { write_volatile(VGA.add(cell - viewport), ((c.color as u16) << 8) | 0x20); }
+            }
+        }
+        for (index, byte) in line.bytes().enumerate() {
+            let cell = self.anchor + index;
+            if cell >= viewport && cell < viewport + WIDTH * HEIGHT {
+                unsafe { write_volatile(VGA.add(cell - viewport), ((c.color as u16) << 8) | byte as u16); }
+            }
+        }
+        c.x = (self.anchor + cursor) % WIDTH;
+        c.y = (self.anchor + cursor) / WIDTH - c.scrolls;
+        c.cursor();
+        self.length = line.len();
+        self.cursor = cursor;
+    }
+
+    fn finish(&mut self) {
+        if self.cursor != self.length { self.serial_position(self.length); }
+        let c = console();
+        c.x = (self.anchor + self.length) % WIDTH;
+        c.y = (self.anchor + self.length) / WIDTH - c.scrolls;
+        c.cursor();
+        self.cursor = self.length;
+    }
+}
+
+fn serial_csi(mut number: usize, final_byte: u8) {
+    if number == 0 { return; }
+    let mut digits = [0u8; 20];
+    let mut start = digits.len();
+    while number > 0 { start -= 1; digits[start] = b'0' + (number % 10) as u8; number /= 10; }
+    unsafe { serial_write(0x1b); serial_write(b'['); }
+    for &byte in &digits[start..] { unsafe { serial_write(byte); } }
+    unsafe { serial_write(final_byte); }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ExecState { Success, Error, Denied, Cancelled, CommitUnknown }
+
+pub(crate) fn cancelled(keyboard: &mut Keyboard) -> bool {
+    unsafe { serial_read() }.or_else(|| keyboard.read()) == Some(3)
+}
+
+pub(crate) fn execute_action(action: Action<'_>, keyboard: &mut Keyboard) -> ExecState {
+    let mut state = ExecState::Success;
+    match action {
         Action::Help => {
-            kprintln!("help | about | uptime | clear  This list | the kernel | time since boot");
-            kprintln!("echo TEXT | calc A OP B        Print text | integer + - * / (calc 12 * 3)");
-            kprintln!("sleep MS                       Block the shell for MS ms (0-60000)");
-            kprintln!("mem | alloc | free ADDR        Memory map | take a zeroed frame | return it");
-            kprintln!("ps | top                       Tasks | per-domain resource use and limits");
-            kprintln!("spawn spin|beat|once | kill N  Start a task | stop one, freeing its stack");
-            kprintln!("disk | format                  Disk status | create an empty TaneFS (admin)");
-            kprintln!("ls | cat NAME | rm NAME        Files you may read | show one | delete one");
-            kprintln!("write NAME TEXT | append ...   Replace or extend a file, creating it");
-            kprintln!("net | net ping IP              Network status | IPv4/IPv6 echo (admin)");
-            kprintln!("  --count N --timeout MS       1-10 probes, 1-5000 ms each; Ctrl-C cancels");
-            kprintln!("sec | audit | drop             Policy | denials (admin) | lower to user");
-            kprintln!("fault KIND                     Exception check: bp de ud gp pf df null ro nx");
-            kprintln!("reboot | halt                  Restart | stop the CPU (admin)");
+            shell_runtime::help(&[]);
         }
         Action::About => {
-            kprintln!("Tane OS 0.6 - a small original Rust kernel.");
+            kprintln!("Tane OS 0.7 - a small original Rust kernel with Tane Shell.");
             kprintln!("No Linux code, GRUB, external crates, libc, or host OS calls.");
             kprintln!("Firmware loads our 512-byte boot sector; it loads this kernel.");
             kprintln!("Ring 0, own GDT/TSS/IDT, PIT at {} Hz, E820 RAM in 4 KiB frames.", interrupts::TIMER_HZ);
@@ -238,6 +371,7 @@ fn execute(line: &str, keyboard: &mut Keyboard) {
             kprintln!("W^X paging, NX data, table-driven MAC, per-domain quotas, audit log.");
             kprintln!("ATA disk with TaneFS: labelled, checksummed files that survive reboots.");
             kprintln!("RTL8139, ARP/IPv4/ICMP, NDP/IPv6/ICMPv6; static network configuration.");
+            kprintln!("Tane Shell: bounded editor, typed records, pipelines, preview and explicit apply.");
             kprintln!("CPU exceptions print registers; all tasks share ring 0 and one address space.");
         }
         Action::Memory => {
@@ -249,7 +383,7 @@ fn execute(line: &str, keyboard: &mut Keyboard) {
             kprintln!("Shell stack: 0x80000..0x90000 (grows down)");
             kprintln!("VGA text:    0xb8000");
             kprintln!("First 1 GiB identity mapped: 4 KiB pages below 2 MiB, then 2 MiB pages.");
-            kprintln!("No heap. Command buffer: {} bytes (max {} input).", LINE_SIZE, LINE_SIZE - 1);
+            kprintln!("No heap. Command buffer: {} bytes (max {} input).", editor::LINE_CAPACITY, editor::LINE_CAPACITY);
             let map = e820_map();
             kprintln!("BIOS E820 map ({} entries):", map.len());
             for entry in map {
@@ -269,26 +403,30 @@ fn execute(line: &str, keyboard: &mut Keyboard) {
         Action::Calc(Err(error)) | Action::Sleep(Err(error)) | Action::Fault(Err(error))
         | Action::Free(Err(error)) | Action::Spawn(Err(error)) | Action::Kill(Err(error))
         | Action::Cat(Err(error)) | Action::Remove(Err(error)) | Action::WriteUsage(error)
-        | Action::Ping(Err(error)) => kprintln!("error: {}", error),
+        | Action::Ping(Err(error)) => { kprintln!("error: {}", error); state = ExecState::Error; },
         Action::Sleep(Ok(ms)) => {
             // Round up so the wait is never shorter than requested.
-            let deadline = interrupts::ticks() + (ms * interrupts::TIMER_HZ).div_ceil(1000);
+            let deadline = interrupts::ticks().saturating_add((ms * interrupts::TIMER_HZ).div_ceil(1000));
             while interrupts::ticks() < deadline {
                 net::poll();
-                tasks::sleep_until(if net::present() { interrupts::ticks().saturating_add(1).min(deadline) } else { deadline });
+                if unsafe { serial_read() }.or_else(|| keyboard.read()) == Some(3) {
+                    kprintln!("cancelled");
+                    return ExecState::Cancelled;
+                }
+                tasks::sleep_until(interrupts::ticks().saturating_add(1).min(deadline));
             }
             kprintln!("slept {} ms", ms);
         }
         Action::Alloc => match allocate_frame() {
             Ok((address, free)) => kprintln!("allocated 0x{:x} (zeroed); {} frames free", address, free),
-            Err(Err(denied)) => report_denied(denied),
-            Err(Ok(error)) => kprintln!("error: {}", error),
+            Err(Err(denied)) => { report_denied(denied); state = ExecState::Denied; },
+            Err(Ok(error)) => { kprintln!("error: {}", error); state = ExecState::Error; },
         },
         Action::Free(Ok(address)) => match free_frame(address) {
             FreeOutcome::Freed(free) => kprintln!("freed 0x{:x}; {} frames free", address, free),
-            FreeOutcome::Denied(denied) => report_denied(denied),
-            FreeOutcome::TaskStack(pid) => kprintln!("error: 0x{:x} is in the stack of pid {}; use kill", address, pid),
-            FreeOutcome::Error(error) => kprintln!("error: 0x{:x}: {}", address, error),
+            FreeOutcome::Denied(denied) => { report_denied(denied); state = ExecState::Denied; },
+            FreeOutcome::TaskStack(pid) => { kprintln!("error: 0x{:x} is in the stack of pid {}; use kill", address, pid); state = ExecState::Error; },
+            FreeOutcome::Error(error) => { kprintln!("error: 0x{:x}: {}", address, error); state = ExecState::Error; },
         },
         Action::Tasks => {
             kprintln!("PID NAME   DOMAIN STATE       CPU s     COUNTER  STACK");
@@ -309,18 +447,18 @@ fn execute(line: &str, keyboard: &mut Keyboard) {
         }
         Action::Spawn(Ok(kind)) => match tasks::spawn(kind) {
             Ok(pid) => kprintln!("started {} as pid {} in domain {}", kind.name(), pid, tasks::current_domain().name()),
-            Err(tasks::SpawnError::Denied(denied)) => report_denied(denied),
-            Err(tasks::SpawnError::Failed(error)) => kprintln!("error: {}", error),
+            Err(tasks::SpawnError::Denied(denied)) => { report_denied(denied); state = ExecState::Denied; },
+            Err(tasks::SpawnError::Failed(error)) => { kprintln!("error: {}", error); state = ExecState::Error; },
         },
         Action::Kill(Ok(pid)) => match tasks::kill(pid) {
             Ok(name) => kprintln!("killed pid {} ({}); {} frames free", pid, name, with_frames(|frames| frames.free_frames())),
-            Err(tasks::KillError::Denied(denied)) => report_denied(denied),
-            Err(tasks::KillError::Failed(error)) => kprintln!("error: {}", error),
+            Err(tasks::KillError::Denied(denied)) => { report_denied(denied); state = ExecState::Denied; },
+            Err(tasks::KillError::Failed(error)) => { kprintln!("error: {}", error); state = ExecState::Error; },
         },
         Action::Fault(Ok(fault)) => {
             if permitted(Op::Fault) {
                 raise(fault);
-            }
+            } else { state = ExecState::Denied; }
         }
         Action::Security => show_security(),
         Action::Disk => match storage::status() {
@@ -333,7 +471,7 @@ fn execute(line: &str, keyboard: &mut Keyboard) {
         },
         Action::Format => match storage::format() {
             Ok(()) => kprintln!("formatted: empty TaneFS, {} files of up to {} bytes", fs::MAX_FILES, fs::MAX_FILE_SIZE),
-            Err(error) => report_storage(error),
+            Err(error) => state = report_storage_mutation(error),
         },
         Action::List => {
             kprintln!("SLOT LABEL    SIZE  GEN NAME");
@@ -344,7 +482,7 @@ fn execute(line: &str, keyboard: &mut Keyboard) {
             });
             match result {
                 Ok(()) => kprintln!("{} file(s) readable by domain {}", shown, tasks::current_domain().name()),
-                Err(error) => report_storage(error),
+                Err(error) => state = report_storage(error),
             }
         }
         Action::Cat(Ok(name)) => {
@@ -359,24 +497,24 @@ fn execute(line: &str, keyboard: &mut Keyboard) {
                         kprintln!();
                     }
                 }
-                Err(error) => report_storage(error),
+                Err(error) => state = report_storage(error),
             }
         }
         Action::Write { name, text, append } => match storage::write(name, text.as_bytes(), append) {
             Ok(true) => kprintln!("created {} ({} bytes, label {})", name, text.len(), tasks::current_domain().name()),
             Ok(false) => kprintln!("{} {} ({} bytes)", if append { "appended to" } else { "wrote" }, name, text.len()),
-            Err(error) => report_storage(error),
+            Err(error) => state = report_storage_mutation(error),
         },
         Action::Remove(Ok(name)) => match storage::remove(name) {
             Ok(()) => kprintln!("removed {}", name),
-            Err(error) => report_storage(error),
+            Err(error) => state = report_storage_mutation(error),
         },
         Action::Resources => show_resources(),
         Action::Network => show_network(),
         Action::Ping(Ok(request)) => {
             let Some(target) = inet::parse(request.address) else {
                 kprintln!("error: invalid literal IPv4/IPv6 address (DNS is not implemented)");
-                return;
+                return ExecState::Error;
             };
             let result = net::ping(target, request.count, request.timeout_ms,
                 || unsafe { serial_read() }.or_else(|| keyboard.read()) == Some(3),
@@ -387,14 +525,15 @@ fn execute(line: &str, keyboard: &mut Keyboard) {
                 });
             match result {
                 Ok(summary) => {
-                    if summary.completion == net::Completion::Cancelled { kprintln!("cancelled"); }
+                    if summary.completion == net::Completion::Cancelled { kprintln!("cancelled"); state = ExecState::Cancelled; }
+                    else if summary.received != summary.sent { state = ExecState::Error; }
                     kprintln!("{} sent, {} received", summary.sent, summary.received);
                 }
-                Err(net::Error::Denied(denied)) => report_denied(denied),
-                Err(net::Error::Absent) => kprintln!("error: network unavailable (no RTL8139 detected)"),
-                Err(net::Error::InvalidRequest) => kprintln!("error: invalid ping bounds"),
-                Err(net::Error::Device(error)) => kprintln!("error: network device: {}", error.message()),
-                Err(net::Error::Protocol(error)) => kprintln!("error: network: {}", error.message()),
+                Err(net::Error::Denied(denied)) => { report_denied(denied); state = ExecState::Denied; },
+                Err(net::Error::Absent) => { kprintln!("error: network unavailable (no RTL8139 detected)"); state = ExecState::Error; },
+                Err(net::Error::InvalidRequest) => { kprintln!("error: invalid ping bounds"); state = ExecState::Error; },
+                Err(net::Error::Device(error)) => { kprintln!("error: network device: {}", error.message()); state = ExecState::Error; },
+                Err(net::Error::Protocol(error)) => { kprintln!("error: network: {}", error.message()); state = ExecState::Error; },
             }
         }
         Action::Audit => {
@@ -415,12 +554,12 @@ fn execute(line: &str, keyboard: &mut Keyboard) {
                         (_, None) => kprintln!(" DENIED by {}", reason),
                     }
                 });
-            }
+            } else { state = ExecState::Denied; }
         }
         Action::DropToUser => match tasks::lower_domain(Domain::User) {
             Ok(from) => kprintln!("domain {} -> user; this cannot be undone until reboot", from.name()),
             Err(Domain::User) => kprintln!("already in domain user; no command raises a domain"),
-            Err(current) => kprintln!("error: domain {} cannot be lowered to user", current.name()),
+            Err(current) => { kprintln!("error: domain {} cannot be lowered to user", current.name()); state = ExecState::Error; },
         },
         Action::Clear => {
             console().clear();
@@ -431,11 +570,11 @@ fn execute(line: &str, keyboard: &mut Keyboard) {
             if permitted(Op::Halt) {
                 kprintln!("HALTED");
                 halt();
-            }
+            } else { state = ExecState::Denied; }
         }
         Action::Reboot => {
             if !permitted(Op::Reboot) {
-                return;
+                return ExecState::Denied;
             }
             kprintln!("REBOOTING");
             // QEMU's PC implements the 8042 controller reset command.
@@ -449,9 +588,10 @@ fn execute(line: &str, keyboard: &mut Keyboard) {
             }
             halt();
         }
-        Action::Unknown => kprintln!("Unknown command. Type help."),
+        Action::Unknown => { kprintln!("Unknown command. Type help."); state = ExecState::Error; },
         Action::Empty => {}
     }
+    state
 }
 
 /// The MAC enforcement point for commands without an object.
@@ -538,11 +678,20 @@ fn free_frame(address: u64) -> FreeOutcome {
     })
 }
 
-fn report_storage(error: storage::StorageError) {
+fn report_storage_mutation(error: storage::StorageError) -> ExecState {
+    let uncertain = error.commit_unknown();
+    let state = report_storage(error);
+    if uncertain { ExecState::CommitUnknown } else { state }
+}
+
+fn report_storage(error: storage::StorageError) -> ExecState {
     match error {
-        storage::StorageError::NoDisk => kprintln!("error: no disk"),
-        storage::StorageError::Denied(denied) => report_denied(denied),
-        storage::StorageError::Fs(error) => kprintln!("error: {}", error.message()),
+        storage::StorageError::NoDisk => { kprintln!("error: no disk"); ExecState::Error }
+        storage::StorageError::Denied(denied) => { report_denied(denied); ExecState::Denied }
+        storage::StorageError::Fs(error) => {
+            kprintln!("error: {}", error.message());
+            ExecState::Error
+        }
     }
 }
 
@@ -636,7 +785,7 @@ fn raise(fault: Fault) {
     kprintln!("returned to the shell after the exception");
 }
 
-struct Console { x: usize, y: usize, color: u8 }
+struct Console { x: usize, y: usize, color: u8, scrolls: usize }
 
 impl Console {
     fn clear(&mut self) {
@@ -645,6 +794,7 @@ impl Console {
         }
         self.x = 0;
         self.y = 0;
+        self.scrolls = 0;
         self.cursor();
     }
 
@@ -652,14 +802,19 @@ impl Console {
         self.x = 0;
         self.y += 1;
         if self.y == HEIGHT {
-            for i in 0..WIDTH * (HEIGHT - 1) {
-                unsafe { write_volatile(VGA.add(i), read_volatile(VGA.add(i + WIDTH))); }
-            }
-            for i in WIDTH * (HEIGHT - 1)..WIDTH * HEIGHT {
-                unsafe { write_volatile(VGA.add(i), 0x0720); }
-            }
-            self.y = HEIGHT - 1;
+            self.scroll_one();
         }
+    }
+
+    fn scroll_one(&mut self) {
+        for i in 0..WIDTH * (HEIGHT - 1) {
+            unsafe { write_volatile(VGA.add(i), read_volatile(VGA.add(i + WIDTH))); }
+        }
+        for i in WIDTH * (HEIGHT - 1)..WIDTH * HEIGHT {
+            unsafe { write_volatile(VGA.add(i), 0x0720); }
+        }
+        self.scrolls = self.scrolls.saturating_add(1);
+        self.y = HEIGHT - 1;
     }
 
     fn byte(&mut self, b: u8) {
@@ -726,6 +881,22 @@ impl Keyboard {
         self.decode(scan)
     }
 
+    fn read_key(&mut self) -> Option<editor::Key> {
+        use editor::Key;
+        Some(match self.read()? {
+            // Private codes emitted only by extended PS/2 scan decoding.
+            0x80 => Key::Left, 0x81 => Key::Right, 0x82 => Key::Home,
+            0x83 => Key::End, 0x84 => Key::Up, 0x85 => Key::Down,
+            0x86 => Key::Delete,
+            1 => Key::Home, 2 => Key::Left, 3 => Key::Cancel, 4 => Key::Delete,
+            5 => Key::End, 6 => Key::Right, 8 | 127 => Key::Backspace,
+            9 => Key::Complete, 10 | 13 => Key::Submit, 11 => Key::ClearAfter,
+            14 => Key::Down, 16 => Key::Up, 21 => Key::ClearBefore, 23 => Key::ClearWord,
+            byte @ b' '..=b'~' => Key::Character(byte),
+            _ => return None,
+        })
+    }
+
     fn decode(&mut self, scan: u8) -> Option<u8> {
         if self.skip > 0 { self.skip -= 1; return None; }
         if scan == 0xe1 { self.skip = 5; return None; } // Pause sequence.
@@ -734,7 +905,11 @@ impl Keyboard {
             self.extended = false;
             if scan == 0x1d { self.right_ctrl = true; return None; }
             if scan == 0x9d { self.right_ctrl = false; return None; }
-            return if scan == 0x1c { Some(b'\n') } else { None };
+            return match scan {
+                0x1c => Some(b'\n'), 0x4b => Some(0x80), 0x4d => Some(0x81),
+                0x47 => Some(0x82), 0x4f => Some(0x83), 0x48 => Some(0x84),
+                0x50 => Some(0x85), 0x53 => Some(0x86), _ => None,
+            };
         }
         match scan {
             0x1d => { self.left_ctrl = true; return None; }
@@ -748,7 +923,6 @@ impl Keyboard {
             _ => {}
         }
         let shift = self.left_shift || self.right_shift;
-        if scan == 0x2e && (self.left_ctrl || self.right_ctrl) { return Some(3); }
         let b = match scan {
             0x02..=0x0d => {
                 let table = if shift { b"!@#$%^&*()_+" } else { b"1234567890-=" };
@@ -758,6 +932,7 @@ impl Keyboard {
             0x1e..=0x26 => b"asdfghjkl"[(scan - 0x1e) as usize],
             0x2c..=0x32 => b"zxcvbnm"[(scan - 0x2c) as usize],
             0x0e => 8,
+            0x0f => 9,
             0x1c => b'\n',
             0x39 => b' ',
             0x1a => if shift { b'{' } else { b'[' },
@@ -771,6 +946,7 @@ impl Keyboard {
             0x35 => if shift { b'?' } else { b'/' },
             _ => return None,
         };
+        if (self.left_ctrl || self.right_ctrl) && b.is_ascii_lowercase() { return Some(b - b'a' + 1); }
         Some(if b.is_ascii_lowercase() && shift != self.caps { b - 32 } else { b })
     }
 }

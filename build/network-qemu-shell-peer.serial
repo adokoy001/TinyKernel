@@ -1,0 +1,52 @@
+TANE OS / RUST BARE METAL
+Self-made BIOS loader + Rust kernel. External crates: 0.
+64-bit mode | VGA + COM1 | PS/2 keyboard | no heap
+RAM: 7 E820 entries | 16096 free 4 KiB frames (64384 KiB) above 1 MiB
+IDT: 32 exception handlers, #DF on IST1 | PIT timer 100 Hz
+Tasks: preemptive round robin, up to 8 tasks
+Protection: NX data | kernel text read-only | null page unmapped | CR0.WP
+MAC: enforcing compiled-in policy | shell domain admin (drop lowers it)
+Disk: ATA found; disk is not formatted (admin: format)
+Network: RTL8139 MAC 52:54:00:12:34:56 | static IPv4 + IPv6
+Type help. English keyboard / ASCII input.
+READY
+tane> format
+formatted: empty TaneFS, 32 files of up to 4096 bytes
+tane> net status | json
+[{"available":true,"mac":"52:54:00:12:34:56","ipv4":"10.0.2.15","ipv6":"fd00::15","rx":0,"tx":0,"dropped":0,"neighbors":0}]
+tane> net ping 10.0.2.2 --count 2 --timeout 200 | where kind == reply | select source sequence rtt_ms | json
+[{"source":"10.0.2.2","sequence":1,"rtt_ms":10},{"source":"10.0.2.2","sequence":2,"rtt_ms":10}]
+tane> net ping fd00::2 --count 2 --timeout 200 | where kind == reply | select source sequence rtt_ms | json
+[{"source":"fd00::2","sequence":1,"rtt_ms":10},{"source":"fd00::2","sequence":2,"rtt_ms":10}]
+tane> net status | json
+[{"available":true,"mac":"52:54:00:12:34:56","ipv4":"10.0.2.15","ipv6":"fd00::15","rx":6,"tx":6,"dropped":0,"neighbors":2}]
+tane> net ping 10.0.2.2 --count 2 --timeout 100 | json
+[{"kind":"timeout","source":"10.0.2.2","sequence":1,"bytes":null,"ttl":null,"rtt_ms":null,"sent":null,"received":null},{"kind":"timeout","source":"10.0.2.2","sequence":2,"bytes":null,"ttl":null,"rtt_ms":null,"sent":null,"received":null},{"kind":"summary","source":"10.0.2.2","sequence":null,"bytes":null,"ttl":null,"rtt_ms":null,"sent":2,"received":0}]
+tane> status | json
+[{"code":"error","operation":"net ping","message":"command failed"}]
+tane> file write timeout.tsh "net ping 10.0.2.2 --count 1 --timeout 100 | json\nfile write after-timeout BAD"
+created timeout.tsh (77 bytes, label admin)
+tane> run timeout.tsh
+[{"kind":"timeout","source":"10.0.2.2","sequence":1,"bytes":null,"ttl":null,"rtt_ms":null,"sent":null,"received":null},{"kind":"summary","source":"10.0.2.2","sequence":null,"bytes":null,"ttl":null,"rtt_ms":null,"sent":1,"received":0}]
+stopped: timeout.tsh line 1
+tane> status | json
+[{"code":"error","operation":"run","message":"command failed"}]
+tane> file list | json
+[{"slot":0,"label":"admin","bytes":77,"generation":1,"name":"timeout.tsh"}]
+tane> net ping 10.0.2.2 --count 1 --timeout 200 | where kind == reply | json
+[{"kind":"reply","source":"10.0.2.2","sequence":1,"bytes":16,"ttl":64,"rtt_ms":10,"sent":null,"received":null}]
+tane> net ping 10.0.2.99 --count 1 --timeout 100 | nonsense
+error: unknown operation; type help
+tane> net ping fd00::99 --count 1 --timeout 100 | select unknown | json
+error: unknown column
+tane> net ping 10.0.2.99 --count 1 --timeout 100 | where unknown == 1 | json
+error: unknown column
+tane> drop
+domain admin -> user; this cannot be undone until reboot
+tane$ net ping 10.0.2.99 --count 1 --timeout 100 | json
+denied: user may not net-ping (MAC policy; audited)
+tane$ net ping fd00::99 --count 1 --timeout 100 | json
+denied: user may not net-ping (MAC policy; audited)
+tane$ net status | json
+[{"available":true,"mac":"52:54:00:12:34:56","ipv4":"10.0.2.15","ipv6":"fd00::15","rx":7,"tx":10,"dropped":0,"neighbors":2}]
+tane$ 

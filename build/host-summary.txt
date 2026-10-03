@@ -39,6 +39,31 @@ running 3 tests
 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
 
+running 9 tests
+.........
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 4 tests
+....
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 13 tests
+.............
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 12 tests
+............
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+
+running 4 tests
+....
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
 running 10 tests
 ..........
 test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
@@ -78,4 +103,81 @@ warning: 3 warnings emitted
 running 15 tests
 ...............
 test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+warning: method `message` is never used
+  --> tests/../src/fs.rs:58:12
+   |
+57 | impl FsError {
+   | ------------ method in this implementation
+58 |     pub fn message(self) -> &'static str {
+   |            ^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` on by default
+
+warning: method `device` is never used
+   --> tests/../src/fs.rs:191:12
+    |
+139 | impl<D: BlockDevice> FileSystem<D> {
+    | ---------------------------------- method in this implementation
+...
+191 |     pub fn device(&self) -> &D {
+    |            ^^^^^^
+
+warning: method `name` is never used
+  --> tests/../src/mac.rs:21:12
+   |
+20 | impl Domain {
+   | ----------- method in this implementation
+21 |     pub fn name(self) -> &'static str {
+   |            ^^^^
+
+warning: method `name` is never used
+  --> tests/../src/mac.rs:45:12
+   |
+44 | impl Class {
+   | ---------- method in this implementation
+45 |     pub fn name(self) -> &'static str {
+   |            ^^^^
+
+warning: method `name` is never used
+  --> tests/../src/mac.rs:75:12
+   |
+74 | impl Op {
+   | ------- method in this implementation
+75 |     pub fn name(self) -> &'static str {
+   |            ^^^^
+
+warning: variant `Quota` is never constructed
+   --> tests/../src/mac.rs:161:5
+    |
+157 | pub enum Reason {
+    |          ------ variant in this enum
+...
+161 |     Quota,
+    |     ^^^^^
+    |
+    = note: `Reason` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+
+warning: method `name` is never used
+  --> tests/../src/plans.rs:18:12
+   |
+17 | impl PlannedKind {
+   | ---------------- method in this implementation
+18 |     pub fn name(self) -> &'static str {
+   |            ^^^^
+
+warning: method `message` is never used
+  --> tests/../src/plans.rs:46:12
+   |
+45 | impl PlanError {
+   | -------------- method in this implementation
+46 |     pub fn message(self) -> &'static str {
+   |            ^^^^^^^
+
+warning: 8 warnings emitted
+
+
+running 25 tests
+.........................
+test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 

@@ -1,6 +1,6 @@
 # Tane OS — Rustで作る最小の自前カーネル
 
-作成日: 2026 10 02 / 0.6更新: 2026 10 04
+作成日: 2026 10 02 / 0.7更新: 2026 10 04
 
 既存OSの上で動くシェルではなく、仮想PCのCPUを直接動かす小さなカーネルです。
 OS本体、BIOS用ブートセクター、画面・入力ドライバを、このプロジェクト内で実装しています。
@@ -22,13 +22,22 @@ sudo apt update
 sudo apt install qemu-system-x86
 ```
 
-ZIPを展開して、このREADMEと同じフォルダで実行します。起動イメージは同梱済みなので、Rustをインストールしなくても試せます。
+GitHubの **Code → Download ZIP** でソースを取得して展開するか、リポジトリをcloneし、このREADMEと同じフォルダで実行します。起動イメージは`build/tane-os.img`に同梱済みなので、Rustをインストールしなくても試せます。
 
 ```sh
 sh run.sh
 ```
 
-初回は`build/disk.img`（1 MiB、TaneFS用のデータディスク）が作られます。最初に`format`してから使ってください。中身は次回以降も残ります。
+初回は`build/disk.img`（1 MiB、TaneFS用のデータディスク）が作られます。新しいディスクだけ、最初に`file format`してから使ってください。中身は次回以降も残ります。`file format`は既存のファイルをすべて消します。
+
+新しいディスクで、起動後のプロンプトに次のように入力すると、保存と読み出しを試せます。
+
+```text
+file format
+file write hello "Hello Tane"
+file read hello
+file list
+```
 
 画面をクリックして、`help`と入力してください。入力は英語配列・ASCIIです。マウスとキーボードのキャプチャは`Ctrl+Alt+G`で解除できます。
 
@@ -38,13 +47,50 @@ sh run.sh
 sh run.sh --serial
 ```
 
-端末モードは`Ctrl+C`で入力やpingを取り消し、`Ctrl+A`に続けて`X`でQEMUを終了します。`halt`後も同じ操作でQEMUを終了してください。
+端末モードは`Ctrl+C`で入力・sleep・ping・スクリプトを取り消せます。`Ctrl+A`に続けて`X`でQEMUを終了します。QEMUの端末モードでは`Ctrl+A`がQEMUの操作キーなので、シェルへ渡すには2回押してください。`halt`後も`Ctrl+A`、`X`でQEMUを終了してください。
+
+## Tane Shell v1を試す
+
+0.7には、自前のシェル言語、共通operation registry、型付きレコードのパイプライン、入力編集、変数、スクリプト、ファイル変更のplan/applyを含みます。シェルはカーネル内のタスクとして動きます。外部のシェルや実行ファイルは呼び出しません。
+
+```text
+help
+help task list
+ops | select name effect | take 8
+task list | where domain == admin | select pid name state | sort pid --desc
+file list | where bytes > 0 | select name bytes | sort bytes | json
+file list | count
+net status | json
+```
+
+`|`で渡すのは、表示済みの文字列ではなく列名・型を持つレコードです。`where bytes > 0`と`sort bytes`は数値として比較します。すべての段の名前・引数・列・型を先に検査するので、不正な後続段があるコマンドで先頭段だけが実行されることはありません。ファイルに残すときは、明示的な末尾の`save`を使います。
+
+```text
+task list | select pid name | json | save tasks.json
+file read tasks.json
+let TARGET 10.0.2.2
+net ping $TARGET --count 1
+plan file write notes "hello\nnext line"
+show
+apply
+file read notes
+status | json
+```
+
+`status`は直前のコマンドの結果を`code`・`operation`・`message`として返します。`plan`はファイルのwrite・append・removeに限定した、実行前に確認するための仕組みです。作成ドメイン・ストレージの変更番号・対象ファイルの状態を固定し、`apply`で照合し直します。plan後に別のファイルを変更した場合も、古いplanは拒否します。
+
+`$STATUS`は同じ結果コードを返す読み取り専用変数です。pingのtimeoutは型付きの結果を保ちながら`error`として扱います。`run`は最初の失敗・取消・ドメイン変更で止まり、それまでに完了した変更を残します。`drop`すると、変数・履歴・planを消去します。
+
+詳しい文法・操作・上限・失敗時の扱いは[シェルの使い方](docs/shell-v1.md)にまとめています。
 
 ## 操作
 
 | コマンド | 動作 |
 | --- | --- |
 | `help` | コマンド一覧 |
+| `help task list` / `help "task list"` | 1つのoperationの引数・結果・権限・例 |
+| `ops` | 同じregistryを型付きレコードで読む |
+| `status` | 直前のコマンドの成功・エラー・拒否・取消・commit不明を読む |
 | `about` | カーネルの構成 |
 | `mem` | メモリ配置、BIOSのE820メモリマップ、物理フレームの使用状況 |
 | `alloc` | 4 KiBの物理フレームを1枚確保し、ゼロで埋めてアドレスを表示 |
@@ -74,6 +120,14 @@ sh run.sh --serial
 | `clear` | 画面消去 |
 | `reboot` | 仮想PCを再起動（admin専用） |
 | `halt` | CPU停止（admin専用） |
+| `vars` / `let NAME VALUE` / `unset NAME` | シェル内の文字列変数の一覧・設定・削除 |
+| `history` | メモリ内の最近8行の入力履歴 |
+| `run NAME` | TaneFSのスクリプトを実行（最初の失敗で止める） |
+| `plan file write NAME TEXT` | 変更予定を保存。まだ書き込まない |
+| `plan file append NAME TEXT` / `plan file remove NAME` | 追記・削除を予定する |
+| `show` / `apply [ID]` | 予定を確認・1回だけ適用 |
+| `where` / `select` / `sort` / `take` / `count` / `json` | 型付きパイプラインの絞り込み・投影・並べ替え・件数・JSON化 |
+| `save NAME` | パイプラインの末尾で、結果をファイルへ保存 |
 
 演算子は`+`、`-`、`*`、`/`です。各項目を空白で区切ります。除算は整数除算で、ゼロ除算やオーバーフローはエラー表示します。
 `fault`の種類は`bp`（ブレークポイント）、`de`（ゼロ除算）、`ud`（未定義命令）、`gp`（一般保護例外）、`pf`（ページフォルト）、`df`（ダブルフォルト）です。
@@ -84,7 +138,9 @@ sh run.sh --serial
 `beat`は100 msずつ眠ってはカウンターを増やし、眠っている間はCPUを使いません。`once`は300 ms眠ったあと自分で終了し、スタックのフレームが自動で回収されます。
 シェルと`idle`を含めて最大8タスクです。シェル（PID 1）と`idle`（PID 0）は止められません。タスクのスタックに使われているフレームは`free`できないので、`kill`で止めてください。
 
-Backspaceで編集、Ctrl+Cで入力・pingの取消ができます。1行は最大127文字で、超過した文字は無視します。履歴、矢印での編集、日本語入力はありません。pingの実行中は取消以外の入力を捨てます。
+正式な名前は`task list`・`task spawn`・`task kill`、`file list`・`file read`・`file write`・`file append`・`file remove`・`file format`、`net status`・`net ping`です。従来の`ps`・`spawn`・`kill`・`ls`・`cat`・`write`・`append`・`rm`・`format`・`net`・`ping`も、同じoperationへの別名として使えます。
+
+1行の入力は最大255 ASCIIバイトです。左右・Home/End・Backspace/Deleteで編集し、上下で最近8行の履歴を呼び出せます。行末でのTabはregistryのコマンド・変数名・読めるファイル名を補完します。超過した入力は行全体を拒否し、短く切ったコマンドを実行しません。PS/2とCOM1で同じ編集処理を使います。日本語の対話入力、永続履歴、バックグラウンドジョブはありません。pingの実行中は取消以外の入力を捨てます。
 
 ## ネットワークを試す
 
@@ -105,7 +161,7 @@ IPv4はARP、IPv6はNDPで次の送信先MACを解決し、ICMP/ICMPv6のecho要
 
 固定設定は`src/netstack.rs`の`Config::qemu`です。QEMUの標準IPv6ネットワークはこの設定と異なるため、`run.sh`では`ipv6-net=fd00::/64`を明示しています。外部インターネットへのpingはホストとQEMUのICMP制限にも依存します。まず仮想ゲートウェイ、または統合テストの専用peerで確認してください。
 
-ネットワークの解析と実行は`src/netstack.rs`・`src/net.rs`、表示は`src/main.rs`に分けています。pingは型付きの返信、timeoutイベント、完了/取消の集計、機器・プロトコル・権限のエラーを返します。今後の構造化シェルやAPIからも同じ入口を呼べる土台です。型付きパイプラインやoperation registryはまだ実装していません。
+ネットワークの解析と実行は`src/netstack.rs`・`src/net.rs`、シェルの実行と表示は`src/shell_runtime.rs`・`src/main.rs`に分けています。pingは型付きの返信、timeoutイベント、完了/取消の集計、機器・プロトコル・権限のエラーを返します。`net status`はほかのシェル操作と共通のregistryに登録され、型付きパイプラインから読めます。
 
 ## ソースから組み直す
 
@@ -120,7 +176,7 @@ sh run.sh
 ```
 
 `rust-toolchain.toml`でコンパイラを固定しています。必要なツールとターゲットの導入後は、オフラインでビルドできます。
-`build.py`はブートセクターの512バイト長と署名、カーネルの128 KiB制限、未解決シンボルを検査します。リンカは入口アドレスとスタックとの非重複を検査します。
+`build.py`はブートセクターの512バイト長と署名、カーネルの256 KiB制限、未解決シンボルを検査します。読み込みセクター数は`boot.S`の定数を使い、ローダーと検査の上限を一致させています。リンカは入口アドレスとスタックとの非重複を検査します。
 
 ## 読む順序
 
@@ -146,18 +202,26 @@ sh run.sh
 | `src/netstack.rs` | Ethernet/ARP/IPv4/ICMP/IPv6/NDP/ICMPv6の純粋な処理 |
 | `src/net.rs` | ネットワークサービス、pingの権限判定、期限・取消・型付き結果 |
 | `src/shell.rs` | 割り当てなしのコマンド解析と検査付き整数計算 |
+| `src/shell_lang.rs` | 引用・エスケープ・変数・パイプラインの有界な構文解析。展開値を再評価しない |
+| `src/operations.rs` | operationの名前・別名・引数・効果・結果型・権限を持つ共通registry |
+| `src/records.rs` | 型付きの列・セル・レコード、検査済み変換、JSONエスケープ |
+| `src/editor.rs` | ASCII入力の編集・履歴・COM1のANSIキー解釈とPS/2共通キー |
+| `src/plans.rs` | ファイル変更予定、作成ドメイン・変更番号・対象状態の照合、1回限りのapply |
+| `src/shell_runtime.rs` | シェルの共通実行、事前検査、変数・スクリプト・plan・状態の管理 |
+| `src/variables.rs` | 有界な文字列変数、名前と容量の検査、読み取り専用STATUSの予約 |
 | `kernel.ld` | カーネルを`0x10000`に配置し、コード・読み取り専用データ・データを4 KiB境界で分ける |
 | `build.py` | コンパイル、リンク、フロッピーイメージ生成 |
 | `run.sh` | QEMU起動 |
 | `tests/host.sh` | 純粋なロジックのモジュールをホストでテストする |
 | `tests/smoke.py` | 実際の起動と入出力を確かめる統合テスト |
 | `tests/network.py` | 実NICと専用Ethernet peerで通信・不正入力・取消・権限を確認 |
+| `tests/shell.py` | QEMU上の型付きパイプライン、編集、変数、スクリプト、plan、権限と保存を確認 |
 | `build/build-info.txt` | ビルドしたサイズ、ツールチェーン、SHA-256 |
 
 ## どう起動するか
 
 1. 仮想PCのBIOSが、フロッピーの先頭512バイトを`0x7c00`へ読み込みます。
-2. 自作ブートセクターが、続く256セクターを`0x10000`へ読み込み、BIOSのE820機能でメモリマップを`0x5000`へ保存します。
+2. 自作ブートセクターが、続く512セクターを`0x10000`へ読み込み、BIOSのE820機能でメモリマップを`0x5000`へ保存します。
 3. A20を有効化し、保護モード、ページング、64ビットモードを設定します。
 4. スタックを用意し、Rustの`_start`を呼びます。
 5. RustがBSSを初期化し、自前のページテーブルへ切り替えます（コードは読み取り専用、データはNX、0番地は未対応付け、CR0.WPを有効化）。COM1の有無を確かめ、VGAとCOM1へ文字を出します。
@@ -169,7 +233,7 @@ sh run.sh
 11. NICがあるときはシェルが1ティックずつ眠り、入力と受信を調べます。NICがなければ従来の入力待ちを使います。
 
 フロッピー形式は1,474,560バイト、18セクター/トラック、2ヘッドの固定配置です。
-カーネルの実データは最大128 KiBです（`0x10000`〜`0x2ffff`）。1セクターずつ512バイト境界に読むので、フロッピーDMAの64 KiB境界をまたぎません。64 KiBごとに読み込み先のセグメントを進めます。イメージの残りはゼロで埋めています。
+カーネルの実データは最大256 KiBです（`0x10000`〜`0x4ffff`）。1セクターずつ512バイト境界に読むので、フロッピーDMAの64 KiB境界をまたぎません。64 KiBごとに読み込み先のセグメントを進めます。イメージの残りはゼロで埋めています。BSSを含む静的領域は、リンカがシェルスタックの下端`0x80000`を超えないことを別に検査します。
 
 | 物理アドレス | 用途 |
 | --- | --- |
@@ -283,8 +347,8 @@ ring 0だけで動く小さなカーネルです。
 ネットワークはRTL8139が1台、MTU 1500、固定アドレス、ARP/NDPとechoのみです。DHCP、DNS、SLAAC、IPv6 DADによる自アドレス重複検査、UDP、TCP、ソケット、VLAN、IPv4断片の再構成、IPv6拡張ヘッダは未実装です。相手のDAD要求への応答は行います。
 Rustのpanicは表示して停止します。
 
-次は、UDPやソケットを同じポリシー表で扱い、シェルの共通operation registryと構造化パイプラインへ進められます。
-その後は、ring 3で動くユーザータスクとシステムコール（関門をその入口へ移す）、タスクごとのページテーブル、の順に進められます。
+シェルv1は、このカーネルの機能を一貫した入口から使うための実装です。ユーザーが作った機械語の実行やPOSIX互換はありません。
+今後、UDPやソケットを同じポリシー表で扱えます。ring 3で動くユーザータスク、システムコール（関門をその入口へ移す）、タスクごとのページテーブルは、別の実装段階です。
 
 ## テストを再実行する
 
@@ -293,9 +357,17 @@ python3 build.py
 sh tests/host.sh
 python3 tests/smoke.py
 python3 tests/network.py
+python3 tests/shell.py
 ```
 
 `build/`内のテスト結果とスクリーンショットが、そのビルドで行った確認の記録です。
+
+| 検証 | 確認する内容 | 記録 |
+| --- | --- | --- |
+| `tests/host.sh` | 純粋なロジック、シェル構文と展開、registry、型付き変換、入力編集、planの状態照合 | `build/host-summary.txt` |
+| `tests/smoke.py` | BIOSからの起動、例外、タスク、メモリ、MAC、資源制限、TaneFS | `build/smoke-summary.txt` |
+| `tests/network.py` | 実RTL8139、IPv4/IPv6、異常フレーム、取消、userから送信しないこと | `build/network-summary.txt` |
+| `tests/shell.py` | 型付き処理、引用と変数の非評価、編集、save、スクリプトの停止、planと権限 | `build/shell-summary.txt` |
 
 ## 一次資料
 

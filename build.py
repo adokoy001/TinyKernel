@@ -3,6 +3,7 @@
 import hashlib
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -10,8 +11,19 @@ import sys
 ROOT = Path(__file__).resolve().parent
 OUT = ROOT / "build"
 TARGET = "x86_64-unknown-none"
-KERNEL_SECTORS = 256
 FLOPPY_BYTES = 1_474_560
+
+
+def kernel_sector_count():
+    """Use the same bounded literal as the original BIOS read loop."""
+    definitions = re.findall(r"^\s*\.equ\s+KERNEL_SECTORS\s*,\s*([0-9]+)\s*$",
+        (ROOT / "boot.S").read_text(encoding="utf-8"), re.MULTILINE)
+    if len(definitions) != 1:
+        sys.exit("boot.S must define exactly one literal .equ KERNEL_SECTORS.")
+    sectors = int(definitions[0])
+    if not 1 <= sectors <= 512 or 512 + sectors * 512 > FLOPPY_BYTES:
+        sys.exit("BIOS kernel load must be between 1 and 512 floppy sectors.")
+    return sectors
 
 
 def run(*args):
@@ -20,6 +32,7 @@ def run(*args):
 
 
 def main():
+    kernel_limit = kernel_sector_count() * 512
     tools = {name: os.environ.get(name.upper(), name) for name in ("rustc", "as", "ld", "objcopy", "nm")}
     for name, executable in tools.items():
         if not shutil.which(executable):
@@ -42,8 +55,8 @@ def main():
     kernel = (OUT / "kernel.bin").read_bytes()
     if len(boot) != 512 or boot[-2:] != b"\x55\xaa":
         sys.exit("Boot sector must be exactly 512 bytes, ending in 55 AA.")
-    if not 0 < len(kernel) <= KERNEL_SECTORS * 512:
-        sys.exit(f"Kernel is {len(kernel)} bytes; maximum is {KERNEL_SECTORS * 512}.")
+    if not 0 < len(kernel) <= kernel_limit:
+        sys.exit(f"Kernel is {len(kernel)} bytes; maximum is {kernel_limit}.")
     unresolved = subprocess.check_output([tools["nm"], "-u", str(OUT / "kernel.elf")], text=True).strip()
     if unresolved:
         sys.exit(f"Unresolved symbols: {unresolved}")
