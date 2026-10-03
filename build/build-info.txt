@@ -1,0 +1,7 @@
+Tane OS build
+rustc 1.90.0 (1159e78c4 2025-09-14)
+Target: x86_64-unknown-none
+Boot: 512 bytes
+Kernel: 22832 bytes
+Image: 1474560 bytes
+SHA256: dd034732cc729b74e15c3aa28f300db00c06067baf5e2298e281b742af725af6

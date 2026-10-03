@@ -1,0 +1,162 @@
+
+--- QEMU main ---
+TANE OS / RUST BARE METAL
+Self-made BIOS loader + Rust kernel. External crates: 0.
+64-bit mode | VGA + COM1 | polling keyboard | no heap
+Type help. English keyboard / ASCII input.
+READY
+tane> help
+help          Show commands
+about         Describe this kernel
+mem           Show the fixed memory layout
+echo TEXT     Print text
+calc A OP B   Integer + - * / (example: calc 12 * 3)
+clear         Clear the screen
+reboot        Restart the virtual machine
+halt          Stop the CPU (close QEMU to exit)
+tane> about
+Tane OS 0.1 - a small original Rust kernel.
+No Linux code, GRUB, external crates, libc, or host OS calls.
+Firmware loads our 512-byte boot sector; it loads this kernel.
+One task, ring 0, fixed memory, interrupts disabled.
+No process isolation, filesystem, network, or exception handlers.
+tane> mem
+Page tables: 0x1000..0x4000
+Boot sector: 0x7c00..0x7e00
+Kernel:      0x10000..0x15930 (22832 bytes incl. BSS)
+Stack range: 0x80000..0x90000 (grows down)
+VGA text:    0xb8000
+First 1 GiB identity mapped; this is NOT detected RAM size.
+No heap. Command buffer: 128 bytes (max 127 input).
+tane> echo Rust works
+Rust works
+tane> echo  a   b
+ a   b
+tane> calc 12 * 3
+= 36
+tane> calc -7 / 3
+= -2
+tane> calc 9 / 0
+error: division by zero
+tane> calc 9223372036854775807 + 1
+error: i64 overflow
+tane> calc -9223372036854775808 + 0
+= -9223372036854775808
+tane> calc -9223372036854775808 / -1
+error: i64 overflow
+tane> nonsense
+Unknown command. Type help.
+tane> 
+tane> echo baX ck
+back
+tane> echo baX ck
+back
+tane> echo crlf
+crlf
+tane> echo XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+tane> echo recovered
+recovered
+tane> echo scroll-00
+scroll-00
+tane> echo scroll-01
+scroll-01
+tane> echo scroll-02
+scroll-02
+tane> echo scroll-03
+scroll-03
+tane> echo scroll-04
+scroll-04
+tane> echo scroll-05
+scroll-05
+tane> echo scroll-06
+scroll-06
+tane> echo scroll-07
+scroll-07
+tane> echo scroll-08
+scroll-08
+tane> echo scroll-09
+scroll-09
+tane> echo scroll-10
+scroll-10
+tane> echo scroll-11
+scroll-11
+tane> echo scroll-12
+scroll-12
+tane> echo scroll-13
+scroll-13
+tane> echo scroll-14
+scroll-14
+tane> echo scroll-15
+scroll-15
+tane> echo scroll-16
+scroll-16
+tane> echo scroll-17
+scroll-17
+tane> echo scroll-18
+scroll-18
+tane> echo scroll-19
+scroll-19
+tane> echo scroll-20
+scroll-20
+tane> echo scroll-21
+scroll-21
+tane> echo scroll-22
+scroll-22
+tane> echo scroll-23
+scroll-23
+tane> echo scroll-24
+scroll-24
+tane> echo scroll-25
+scroll-25
+tane> echo scroll-26
+scroll-26
+tane> echo scroll-27
+scroll-27
+tane> echo scroll-28
+scroll-28
+tane> echo scroll-29
+scroll-29
+tane> echo kbd
+kbd
+tane> echo A!
+A!
+tane> clear
+[2J[Htane> about
+Tane OS 0.1 - a small original Rust kernel.
+No Linux code, GRUB, external crates, libc, or host OS calls.
+Firmware loads our 512-byte boot sector; it loads this kernel.
+One task, ring 0, fixed memory, interrupts disabled.
+No process isolation, filesystem, network, or exception handlers.
+tane> help
+help          Show commands
+about         Describe this kernel
+mem           Show the fixed memory layout
+echo TEXT     Print text
+calc A OP B   Integer + - * / (example: calc 12 * 3)
+clear         Clear the screen
+reboot        Restart the virtual machine
+halt          Stop the CPU (close QEMU to exit)
+tane> echo Rust kernel / BIOS + serial + PS2 verified
+Rust kernel / BIOS + serial + PS2 verified
+tane> calc 12 * 3
+= 36
+tane> halt
+HALTED
+
+--- QEMU reboot ---
+TANE OS / RUST BARE METAL
+Self-made BIOS loader + Rust kernel. External crates: 0.
+64-bit mode | VGA + COM1 | polling keyboard | no heap
+Type help. English keyboard / ASCII input.
+READY
+tane> reboot
+REBOOTING
+TANE OS / RUST BARE METAL
+Self-made BIOS loader + Rust kernel. External crates: 0.
+64-bit mode | VGA + COM1 | polling keyboard | no heap
+Type help. English keyboard / ASCII input.
+READY
+tane> echo restarted
+restarted
+tane> 

@@ -1,0 +1,6 @@
+# Intermediate build outputs (build.py / tests). Bundled images and reports stay tracked.
+build/*.o
+build/*.a
+build/*.map
+build/boot.elf
+build/shell-tests

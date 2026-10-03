@@ -1,0 +1,16 @@
+Tane OS QEMU integration test
+Elapsed: 3.26s
+Transport (main): local pipes (Unix sockets unavailable or disabled)
+Transport (reboot): local pipes (Unix sockets unavailable or disabled)
+PASS: BIOS floppy boots into the Rust shell
+PASS: help/about/mem describe the running kernel
+PASS: serial input and echo preserve text
+PASS: arithmetic handles signed limits, overflow and zero division
+PASS: unknown/empty commands, both backspaces and CRLF work
+PASS: overlong input is bounded and the next command recovers
+PASS: VGA scrolling keeps the shell responsive
+PASS: PS/2 keyboard path works, including Shift letters and symbols
+PASS: clear works and VGA screenshot is captured
+PASS: halt stops the guest CPU while QEMU stays alive
+PASS: 8042 reboot boots again and accepts a fresh command
+RESULT: PASS

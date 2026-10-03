@@ -1,0 +1,16 @@
+Tane OS verification — 2026 10 02
+
+Compiler: rustc 1.90.0
+Emulator: QEMU 8.2.2, PC BIOS, TCG, 64 MiB RAM
+
+Host shell tests: 6 passed, 0 failed.
+QEMU integration checks: 11 passed, 0 failed.
+Boot: exactly 512 bytes, ending 55 AA.
+Kernel entry: 0x10000, ELF64 x86-64.
+Flat kernel: 22832 bytes, below 32768 byte boot load budget.
+Unresolved ELF symbols: none.
+Two full builds produced identical disk images.
+SHA256: dd034732cc729b74e15c3aa28f300db00c06067baf5e2298e281b742af725af6
+
+Only QEMU BIOS execution was tested; physical hardware and UEFI were not tested.
+See smoke-summary.txt and smoke-serial.txt for integration evidence.
