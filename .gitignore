@@ -9,3 +9,6 @@ build/*.ppm
 build/frames-tests
 build/sched-tests
 build/mac-tests
+build/fs-tests
+build/resources-tests
+build/disk.img

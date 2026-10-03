@@ -28,11 +28,12 @@ TIME_LIMIT = 60.0
 
 
 class Machine:
-    def __init__(self, name, deadline, serial=True, memory="64M"):
+    def __init__(self, name, deadline, serial=True, memory="64M", disk=None):
         self.name = name
         self.with_serial = serial
         self.memory = memory
         self.prompt = PROMPT  # USER_PROMPT after `drop`
+        self.disk = disk
         self.deadline = deadline
         self.output = bytearray()
         self.process = None
@@ -91,6 +92,8 @@ class Machine:
             "-drive", f"file={OUT / 'tane-os.img'},format=raw,if=floppy",
             "-boot", "order=a", "-display", "none", "-net", "none",
         ]
+        if self.disk is not None:
+            command += ["-drive", f"file={self.disk},format=raw,if=ide"]
         if use_pipes:
             self.transport = "local pipes (Unix sockets unavailable or disabled)"
             for suffix in (".in", ".out"):
@@ -325,6 +328,20 @@ def spawn(machine, kind):
     return int(match.group(1))
 
 
+def new_disk(directory, name):
+    path = Path(directory) / name
+    with path.open("wb") as disk:
+        disk.truncate(1 << 20)
+    return path
+
+
+def cpu_percent(top_output, domain):
+    match = re.search(rb"^" + domain + rb" .* (\d+)% \( *\d+ ticks\) ", top_output, re.M)
+    if not match:
+        raise AssertionError(f"No CPU figure for {domain!r} in {top_output!r}")
+    return int(match.group(1))
+
+
 def contains(result, expected):
     if expected not in result:
         raise AssertionError(f"Missing {expected!r} in command response {result!r}")
@@ -339,13 +356,14 @@ def main():
     checks = []
     machines = []
     failure = None
+    disks = tempfile.TemporaryDirectory(prefix="tane-disks-")
 
     def checked(name):
         checks.append(name)
         print(f"PASS {name}", flush=True)
 
     try:
-        machine = Machine("main", deadline)
+        machine = Machine("main", deadline, disk=new_disk(disks.name, "main.img"))
         machines.append(machine)
         machine.start()
         checked("BIOS floppy boots into the Rust shell")
@@ -414,6 +432,23 @@ def main():
         contains(machine.command(b"echo after breakpoint\r"), b"\r\nafter breakpoint\r\n")
         contains(machine.command(b"fault nmi\r"), b"error: usage: fault bp|de|ud|gp|pf|df")
         checked("#BP is reported and execution resumes")
+
+        contains(machine.output, b"Disk: ATA found; disk is not formatted (admin: format)")
+        contains(machine.command(b"ls\r"), b"error: disk is not formatted (admin: format)")
+        contains(machine.command(b"format\r"), b"formatted: empty TaneFS, 32 files of up to 4096 bytes")
+        contains(machine.command(b"disk\r"), b"TaneFS mounted, 0 of 32 files used")
+        contains(machine.command(b"write notes.txt hello  disk\r"), b"created notes.txt (11 bytes, label admin)")
+        contains(machine.command(b"append notes.txt , again\r"), b"appended to notes.txt (7 bytes)")
+        contains(machine.command(b"cat notes.txt\r"), b"\r\nhello  disk, again\r\n")
+        contains(machine.command(b"write notes.txt replaced\r"), b"wrote notes.txt (8 bytes)")
+        result = machine.command(b"ls\r")
+        contains(result, b"   0 admin       8    3 notes.txt\r\n")
+        contains(result, b"1 file(s) readable by domain admin")
+        contains(machine.command(b"cat missing\r"), b"error: no such file")
+        contains(machine.command(b"write a/b x\r"), b"error: name must be 1-47 of A-Z a-z 0-9 . _ -")
+        contains(machine.command(b"rm notes.txt\r"), b"removed notes.txt")
+        contains(machine.command(b"ls\r"), b"0 file(s) readable by domain admin")
+        checked("ATA disk: format, create, append, overwrite, cat, ls, rm")
 
         usable, free, used = checked_frames(machine.command(b"mem\r"))
         if usable < 15000 or free != usable or used != 0:
@@ -502,15 +537,11 @@ def main():
 
         contains(machine.command(b"clear\r"), b"\x1b[2J\x1b[H")
         contains(machine.command(b"sec\r"), b"Paging:  NX on | text 0x10000..")
-        shown = [spawn(machine, "spin"), spawn(machine, "beat")]
-        machine.command(b"sleep 300\r")
-        machine.command(b"ps\r")
+        contains(machine.command(b"top\r"), b"Shell and idle are not charged.")
         screenshot = OUT / "tane-os.ppm"
         machine.monitor("screendump", {"filename": str(screenshot)})
         if not screenshot.is_file() or screenshot.stat().st_size < 1000:
             raise AssertionError("QEMU did not capture the VGA screenshot")
-        for pid in shown:
-            machine.command(f"kill {pid}\r".encode("ascii"))
         checked("clear works and VGA screenshot is captured")
 
         start = len(machine.output)
@@ -525,9 +556,12 @@ def main():
         checked("halt stops the guest CPU while QEMU stays alive")
         machine.close()
 
-        reboot = Machine("reboot", deadline, memory="128M")
+        reboot_disk = new_disk(disks.name, "reboot.img")
+        reboot = Machine("reboot", deadline, memory="128M", disk=reboot_disk)
         machines.append(reboot)
         reboot.start()
+        reboot.command(b"format\r")
+        contains(reboot.command(b"write keep.txt survives reboot\r"), b"created keep.txt")
         start = len(reboot.output)
         reboot.send(b"reboot\r")
         reboot.wait_for(b"REBOOTING\r\n", start=start)
@@ -537,6 +571,10 @@ def main():
             raise AssertionError("Reboot did not produce exactly a second boot banner")
         contains(reboot.command(b"echo restarted\r"), b"\r\nrestarted\r\n")
         checked("8042 reboot boots again and accepts a fresh command")
+        contains(reboot.output[start:], b"Disk: TaneFS mounted, 1 files")
+        contains(reboot.command(b"cat keep.txt\r"), b"\r\nsurvives reboot\r\n")
+        keep_slot = int(re.search(rb"^ +(\d+) admin .* keep\.txt\r$", reboot.command(b"ls\r"), re.M).group(1))
+        checked("files and their labels persist across a reboot")
         larger = checked_frames(reboot.command(b"mem\r"))[0]
         if larger - usable < 16000:
             raise AssertionError(f"128 MiB gives {larger} frames, 64 MiB gave {usable}")
@@ -567,13 +605,66 @@ def main():
         if table[1][4] != b"user" or table[admin_spin][4] != b"admin" or table[user_beat][4] != b"user":
             raise AssertionError(f"Wrong MAC labels in {table!r}")
         contains(reboot.command(f"kill {user_beat}\r".encode("ascii")), f"killed pid {user_beat} (beat)".encode("ascii"))
+
+        # Files: user sees and touches only user-labelled files.
+        contains(reboot.command(b"ls\r"), b"0 file(s) readable by domain user")
+        contains(reboot.command(b"cat keep.txt\r"), b"denied: user may not read objects of domain admin")
+        contains(reboot.command(b"rm keep.txt\r"), b"denied: user may not delete objects of domain admin")
+        contains(reboot.command(b"write keep.txt overwrite\r"), b"denied: user may not write objects of domain admin")
+        for index in range(8):
+            contains(reboot.command(f"write u{index} data\r".encode("ascii")), f"created u{index} (4 bytes, label user)".encode("ascii"))
+        contains(reboot.command(b"write u8 data\r"), b"denied: user files limit reached (8/8) for create (quota; audited)")
+        contains(reboot.command(b"cat u3\r"), b"\r\ndata\r\n")
+        contains(reboot.command(b"rm u3\r"), b"removed u3")
+        contains(reboot.command(b"ls\r"), b"7 file(s) readable by domain user")
+
+        # Tasks and frames: per-domain limits.
+        user_spin = spawn(reboot, "spin")
+        spawn(reboot, "beat")
+        spawn(reboot, "beat")
+        contains(reboot.command(b"spawn beat\r"), b"denied: user tasks limit reached (3/3) for spawn (quota; audited)")
+        allocated = 0
+        while True:
+            result = reboot.command(b"alloc\r")
+            if b"denied: user frames limit reached (24/24) for alloc (quota; audited)" in result:
+                break
+            contains(result, b"allocated 0x")
+            allocated += 1
+            if allocated > 24:
+                raise AssertionError("User frame limit not enforced")
+        if allocated != 24 - 3 * 4:
+            raise AssertionError(f"User got {allocated} frames beside three 4-frame stacks; limit is 24")
+
+        # CPU: admin and user spin tasks compete; the caps split each window.
+        reboot.command(b"sleep 2100\r")
+        result = reboot.command(b"top\r")
+        admin_cpu, user_cpu = cpu_percent(result, b"admin"), cpu_percent(result, b"user")
+        if not (60 <= admin_cpu <= 75 and 25 <= user_cpu <= 35):
+            raise AssertionError(f"CPU split admin {admin_cpu}% / user {user_cpu}%, expected about 70/30: {result!r}")
+        contains(reboot.command(f"kill {user_spin}\r".encode("ascii")), b"killed pid")
         contains(reboot.command(b"drop\r"), b"already in domain user; no command raises a domain")
         contains(reboot.command(b"su\r"), b"Unknown command.")
         result = reboot.command(b"sec\r")
         contains(result, b"Subject: pid 1 (shell) in domain user")
-        contains(result, b"Audit: 7 denials since boot.")
-        checked("MAC: labels, one-way drop to user, denials enforced and audited")
+        contains(result, b"Audit:   13 denials since boot (policy and quota).")
+        checked("MAC: labels on tasks, frames and files; one-way drop; denials audited")
+        checked("quotas: user tasks, frames and files limited; CPU split 70/30 under contention")
         reboot.close()
+
+        # Flip one byte of keep.txt on the host; the next boot must notice.
+        with reboot_disk.open("r+b") as disk:
+            disk.seek((8 + keep_slot * 8) * 512 + 2)
+            byte = disk.read(1)
+            disk.seek(-1, 1)
+            disk.write(bytes([byte[0] ^ 0x20]))
+        damaged = Machine("integrity", deadline, disk=reboot_disk)
+        machines.append(damaged)
+        damaged.start()
+        contains(damaged.output, b"Disk: TaneFS mounted, 8 files")
+        contains(damaged.command(b"cat u0\r"), b"\r\ndata\r\n")
+        contains(damaged.command(b"cat keep.txt\r"), b"error: checksum mismatch: file contents are damaged")
+        damaged.close()
+        checked("disk survives a QEMU restart; damaged contents are detected")
 
         fatal_fault("de", deadline, machines, [b"CPU EXCEPTION 0 #DE: Divide error"])
         fatal_fault("ud", deadline, machines, [b"CPU EXCEPTION 6 #UD: Invalid opcode"])
@@ -618,6 +709,7 @@ def main():
         report += [f"PASS: {name}" for name in checks]
         report.append(f"FAIL: {failure}" if failure else "RESULT: PASS")
         (OUT / "smoke-summary.txt").write_text("\n".join(report) + "\n", encoding="utf-8")
+        disks.cleanup()
     if failure:
         print(f"FAIL {failure}", file=sys.stderr)
         return 1

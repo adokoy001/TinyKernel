@@ -8,41 +8,36 @@ IDT: 32 exception handlers, #DF on IST1 | PIT timer 100 Hz
 Tasks: preemptive round robin, up to 8 tasks
 Protection: NX data | kernel text read-only | null page unmapped | CR0.WP
 MAC: enforcing compiled-in policy | shell domain admin (drop lowers it)
+Disk: ATA found; disk is not formatted (admin: format)
 Type help. English keyboard / ASCII input.
 READY
 tane> help
-help          Show commands
-about         Describe this kernel
-mem           Show the memory layout, E820 map and frames
-alloc         Take one zeroed 4 KiB physical frame
-free ADDR     Return a frame (example: free 0x100000)
-ps            List tasks
-spawn KIND    Start a task: spin (CPU), beat (sleeps), once (exits)
-kill PID      Stop a task and free its stack frames
-uptime        Time since boot, counted by timer interrupts
-echo TEXT     Print text
-calc A OP B   Integer + - * / (example: calc 12 * 3)
-sleep MS      Block the shell for MS milliseconds (0-60000)
-fault KIND    Raise a CPU exception: bp de ud gp pf df null ro nx
-sec           Show memory protection and the MAC policy
-audit         Show MAC denials (admin only)
-drop          Lower this shell to the user domain until reboot
-clear         Clear the screen
-reboot        Restart the virtual machine
-halt          Stop the CPU (close QEMU to exit)
+help | about | uptime | clear  This list | the kernel | time since boot
+echo TEXT | calc A OP B        Print text | integer + - * / (calc 12 * 3)
+sleep MS                       Block the shell for MS ms (0-60000)
+mem | alloc | free ADDR        Memory map | take a zeroed frame | return it
+ps | top                       Tasks | per-domain resource use and limits
+spawn spin|beat|once | kill N  Start a task | stop one, freeing its stack
+disk | format                  Disk status | create an empty TaneFS (admin)
+ls | cat NAME | rm NAME        Files you may read | show one | delete one
+write NAME TEXT | append ...   Replace or extend a file, creating it
+sec | audit | drop             Policy | denials (admin) | lower to user
+fault KIND                     Exception check: bp de ud gp pf df null ro nx
+reboot | halt                  Restart | stop the CPU (admin)
 tane> about
-Tane OS 0.4 - a small original Rust kernel.
+Tane OS 0.5 - a small original Rust kernel.
 No Linux code, GRUB, external crates, libc, or host OS calls.
 Firmware loads our 512-byte boot sector; it loads this kernel.
 Ring 0, own GDT/TSS/IDT, PIT at 100 Hz, E820 RAM in 4 KiB frames.
 Preemptive round-robin kernel tasks with stacks from the frame allocator.
-W^X paging, NX data, mandatory access control with an audit log.
+W^X paging, NX data, table-driven MAC, per-domain quotas, audit log.
+ATA disk with TaneFS: labelled, checksummed files that survive reboots.
 CPU exceptions print registers; no process isolation, filesystem, or network.
 tane> mem
 Page tables: in kernel BSS (the boot sector's at 0x1000..0x4000 are retired)
 E820 table:  0x5000..0x5610 (written by the boot sector)
 Boot sector: 0x7c00..0x7e00
-Kernel:      0x10000..0x3a0d8 (172248 bytes incl. BSS)
+Kernel:      0x10000..0x40110 (196880 bytes incl. BSS)
 Shell stack: 0x80000..0x90000 (grows down)
 VGA text:    0xb8000
 First 1 GiB identity mapped: 4 KiB pages below 2 MiB, then 2 MiB pages.
@@ -82,35 +77,63 @@ back
 tane> echo crlf
 crlf
 tane> uptime
-up 0.53 s (53 timer ticks at 100 Hz)
+up 0.51 s (51 timer ticks at 100 Hz)
 tane> sleep 500
 slept 500 ms
 tane> uptime
-up 1.06 s (106 timer ticks at 100 Hz)
+up 1.04 s (104 timer ticks at 100 Hz)
 tane> sleep 60001
 error: usage: sleep MS (0-60000)
 tane> fault bp
 
 CPU EXCEPTION 3 #BP: Breakpoint
 task: pid 1 (shell)
-rip=0000000000010b69 cs=0008 rflags=0000000000000202
-rsp=000000000008fe50 ss=0010
-rax=0000000000000000 rbx=0000000000000001 rcx=0000000000000200
-rdx=0000000000000002 rsi=000000000000005f rdi=0000000000000000
-rbp=0000000000000000 r8 =0000000000000002 r9 =000000000008ff4e
-r10=0000000000000000 r11=0000000000000003 r12=0000000000000001
-r13=000000000008fea8 r14=0000000000000000 r15=000000000008fe58
+rip=00000000000112e0 cs=0008 rflags=0000000000000202
+rsp=000000000008ee70 ss=0010
+rax=0000000000000000 rbx=0000000000000000 rcx=0000000000000002
+rdx=0000000000000003 rsi=0000000000000002 rdi=0000000000000001
+rbp=0000000000000001 r8 =0000000000000000 r9 =0000000000000005
+r10=0000000000000003 r11=0000000000000003 r12=000000000008efc8
+r13=0000000000000008 r14=0000000000000001 r15=00000000000b8000
 Breakpoint handled; resuming.
 returned to the shell after the exception
 tane> echo after breakpoint
 after breakpoint
 tane> fault nmi
 error: usage: fault bp|de|ud|gp|pf|df|null|ro|nx
+tane> ls
+SLOT LABEL    SIZE  GEN NAME
+error: disk is not formatted (admin: format)
+tane> format
+formatted: empty TaneFS, 32 files of up to 4096 bytes
+tane> disk
+ATA disk "QEMU HARDDISK", 1024 KiB: TaneFS mounted, 0 of 32 files used
+tane> write notes.txt hello  disk
+created notes.txt (11 bytes, label admin)
+tane> append notes.txt , again
+appended to notes.txt (7 bytes)
+tane> cat notes.txt
+hello  disk, again
+tane> write notes.txt replaced
+wrote notes.txt (8 bytes)
+tane> ls
+SLOT LABEL    SIZE  GEN NAME
+   0 admin       8    3 notes.txt
+1 file(s) readable by domain admin
+tane> cat missing
+error: no such file
+tane> write a/b x
+error: name must be 1-47 of A-Z a-z 0-9 . _ -
+tane> rm notes.txt
+removed notes.txt
+tane> ls
+SLOT LABEL    SIZE  GEN NAME
+0 file(s) readable by domain admin
 tane> mem
 Page tables: in kernel BSS (the boot sector's at 0x1000..0x4000 are retired)
 E820 table:  0x5000..0x5610 (written by the boot sector)
 Boot sector: 0x7c00..0x7e00
-Kernel:      0x10000..0x3a0d8 (172248 bytes incl. BSS)
+Kernel:      0x10000..0x40110 (196880 bytes incl. BSS)
 Shell stack: 0x80000..0x90000 (grows down)
 VGA text:    0xb8000
 First 1 GiB identity mapped: 4 KiB pages below 2 MiB, then 2 MiB pages.
@@ -149,9 +172,9 @@ started beat as pid 4 in domain admin
 tane> ps
 PID NAME   DOMAIN STATE       CPU s     COUNTER  STACK
   1 shell  admin  running      0.20           -  0x80000 (kernel)
-  0 idle   kernel ready        1.27           -  0x38010 (kernel)
-  2 spin   admin  ready        0.05    12156123  0x102000 (4 frames)
-  3 spin   admin  ready        0.02     5326693  0x106000 (4 frames)
+  0 idle   kernel ready        1.58           -  0x3e010 (kernel)
+  2 spin   admin  ready        0.05    11312869  0x102000 (4 frames)
+  3 spin   admin  ready        0.02     5039488  0x106000 (4 frames)
   4 beat   admin  sleeping     0.00           0  0x10a000 (4 frames)
 tane> echo busy
 busy
@@ -162,24 +185,24 @@ slept 500 ms
 tane> ps
 PID NAME   DOMAIN STATE       CPU s     COUNTER  STACK
   1 shell  admin  running      0.22           -  0x80000 (kernel)
-  0 idle   kernel ready        1.27           -  0x38010 (kernel)
-  2 spin   admin  ready        0.57   144092880  0x102000 (4 frames)
-  3 spin   admin  ready        0.49   124022937  0x106000 (4 frames)
-  4 beat   admin  sleeping     0.00          10  0x10a000 (4 frames)
+  0 idle   kernel ready        1.58           -  0x3e010 (kernel)
+  2 spin   admin  ready        0.58   134524821  0x102000 (4 frames)
+  3 spin   admin  ready        0.46   120046671  0x106000 (4 frames)
+  4 beat   admin  sleeping     0.00           9  0x10a000 (4 frames)
 tane> ps
 PID NAME   DOMAIN STATE       CPU s     COUNTER  STACK
   1 shell  admin  running      0.23           -  0x80000 (kernel)
-  0 idle   kernel ready        1.27           -  0x38010 (kernel)
-  2 spin   admin  ready        0.58   147431773  0x102000 (4 frames)
-  3 spin   admin  ready        0.50   126604233  0x106000 (4 frames)
-  4 beat   admin  sleeping     0.00          10  0x10a000 (4 frames)
+  0 idle   kernel ready        1.58           -  0x3e010 (kernel)
+  2 spin   admin  ready        0.58   135334575  0x102000 (4 frames)
+  3 spin   admin  ready        0.46   120046671  0x106000 (4 frames)
+  4 beat   admin  sleeping     0.00           9  0x10a000 (4 frames)
 tane> free 0x104000
 error: 0x104000 is in the stack of pid 2; use kill
 tane> mem
 Page tables: in kernel BSS (the boot sector's at 0x1000..0x4000 are retired)
 E820 table:  0x5000..0x5610 (written by the boot sector)
 Boot sector: 0x7c00..0x7e00
-Kernel:      0x10000..0x3a0d8 (172248 bytes incl. BSS)
+Kernel:      0x10000..0x40110 (196880 bytes incl. BSS)
 Shell stack: 0x80000..0x90000 (grows down)
 VGA text:    0xb8000
 First 1 GiB identity mapped: 4 KiB pages below 2 MiB, then 2 MiB pages.
@@ -197,26 +220,26 @@ tane> spawn once
 started once as pid 5 in domain admin
 tane> ps
 PID NAME   DOMAIN STATE       CPU s     COUNTER  STACK
-  1 shell  admin  running      0.27           -  0x80000 (kernel)
-  0 idle   kernel ready        1.27           -  0x38010 (kernel)
-  2 spin   admin  ready        0.68   167836198  0x102000 (4 frames)
-  3 spin   admin  ready        0.54   137712470  0x106000 (4 frames)
-  4 beat   admin  sleeping     0.00          11  0x10a000 (4 frames)
-  5 once   admin  sleeping     0.00           0  0x10e000 (4 frames)
+  1 shell  admin  running      0.29           -  0x80000 (kernel)
+  0 idle   kernel ready        1.58           -  0x3e010 (kernel)
+  2 spin   admin  ready        0.63   147269431  0x102000 (4 frames)
+  3 spin   admin  ready        0.46   120924142  0x106000 (4 frames)
+  4 beat   admin  ready        0.00           9  0x10a000 (4 frames)
+  5 once   admin  ready        0.00           0  0x10e000 (4 frames)
 tane> sleep 600
 slept 600 ms
 tane> ps
 PID NAME   DOMAIN STATE       CPU s     COUNTER  STACK
-  1 shell  admin  running      0.28           -  0x80000 (kernel)
-  0 idle   kernel ready        1.27           -  0x38010 (kernel)
-  2 spin   admin  ready        1.00   242182047  0x102000 (4 frames)
-  3 spin   admin  ready        0.86   213560503  0x106000 (4 frames)
-  4 beat   admin  sleeping     0.00          18  0x10a000 (4 frames)
+  1 shell  admin  running      0.30           -  0x80000 (kernel)
+  0 idle   kernel ready        1.58           -  0x3e010 (kernel)
+  2 spin   admin  ready        0.95   230135311  0x102000 (4 frames)
+  3 spin   admin  ready        0.76   198892336  0x106000 (4 frames)
+  4 beat   admin  sleeping     0.00          15  0x10a000 (4 frames)
 tane> mem
 Page tables: in kernel BSS (the boot sector's at 0x1000..0x4000 are retired)
 E820 table:  0x5000..0x5610 (written by the boot sector)
 Boot sector: 0x7c00..0x7e00
-Kernel:      0x10000..0x3a0d8 (172248 bytes incl. BSS)
+Kernel:      0x10000..0x40110 (196880 bytes incl. BSS)
 Shell stack: 0x80000..0x90000 (grows down)
 VGA text:    0xb8000
 First 1 GiB identity mapped: 4 KiB pages below 2 MiB, then 2 MiB pages.
@@ -249,13 +272,13 @@ error: task table is full (8 tasks)
 tane> ps
 PID NAME   DOMAIN STATE       CPU s     COUNTER  STACK
   1 shell  admin  running      0.33           -  0x80000 (kernel)
-  0 idle   kernel ready        1.27           -  0x38010 (kernel)
-  2 spin   admin  ready        1.20   287368000  0x102000 (4 frames)
-  3 spin   admin  ready        0.92   231367557  0x106000 (4 frames)
-  4 beat   admin  ready        0.00          20  0x10a000 (4 frames)
-  6 beat   admin  sleeping     0.00           0  0x112000 (4 frames)
-  7 beat   admin  sleeping     0.00           0  0x116000 (4 frames)
-  8 beat   admin  sleeping     0.00           0  0x11a000 (4 frames)
+  0 idle   kernel ready        1.58           -  0x3e010 (kernel)
+  2 spin   admin  ready        1.16   276199350  0x102000 (4 frames)
+  3 spin   admin  ready        0.80   212822537  0x106000 (4 frames)
+  4 beat   admin  ready        0.00          16  0x10a000 (4 frames)
+  6 beat   admin  ready        0.00           0  0x112000 (4 frames)
+  7 beat   admin  ready        0.00           0  0x116000 (4 frames)
+  8 beat   admin  ready        0.00           0  0x11a000 (4 frames)
 tane> kill 2
 killed pid 2 (spin); 16076 frames free
 tane> kill 3
@@ -270,13 +293,13 @@ tane> kill 8
 killed pid 8 (beat); 16096 frames free
 tane> ps
 PID NAME   DOMAIN STATE       CPU s     COUNTER  STACK
-  1 shell  admin  running      0.35           -  0x80000 (kernel)
-  0 idle   kernel ready        1.33           -  0x38010 (kernel)
+  1 shell  admin  running      0.36           -  0x80000 (kernel)
+  0 idle   kernel ready        1.63           -  0x3e010 (kernel)
 tane> mem
 Page tables: in kernel BSS (the boot sector's at 0x1000..0x4000 are retired)
 E820 table:  0x5000..0x5610 (written by the boot sector)
 Boot sector: 0x7c00..0x7e00
-Kernel:      0x10000..0x3a0d8 (172248 bytes incl. BSS)
+Kernel:      0x10000..0x40110 (196880 bytes incl. BSS)
 Shell stack: 0x80000..0x90000 (grows down)
 VGA text:    0xb8000
 First 1 GiB identity mapped: 4 KiB pages below 2 MiB, then 2 MiB pages.
@@ -361,30 +384,24 @@ A!
 tane> clear
 [2J[Htane> sec
 Subject: pid 1 (shell) in domain admin
-Paging:  NX on | text 0x10000..0x19000 read-only | rodata read-only | data NX
+Paging:  NX on | text 0x10000..0x1c000 read-only | rodata read-only | data NX
          page 0 unmapped | CR0.WP on | IST1 stack for #DF | stack canaries
-MAC:     enforcing; policy compiled in, no command changes it
-  admin  halt reboot fault audit alloc spawn; free/kill admin+user objects
-  user   alloc spawn; free/kill user objects only
-  kernel objects (idle) are off limits; domains only go admin -> user
-Objects: tasks and alloc frames carry their creator's domain; frames are
-         zeroed before reuse. Audit: 1 denials since boot.
-tane> spawn spin
-started spin as pid 9 in domain admin
-tane> spawn beat
-started beat as pid 10 in domain admin
-tane> sleep 300
-slept 300 ms
-tane> ps
-PID NAME   DOMAIN STATE       CPU s     COUNTER  STACK
-  1 shell  admin  running      0.48           -  0x80000 (kernel)
-  0 idle   kernel ready        3.41           -  0x38010 (kernel)
-  9 spin   admin  ready        0.34    76403958  0x11e000 (4 frames)
- 10 beat   admin  sleeping     0.00           3  0x122000 (4 frames)
-tane> kill 9
-killed pid 9 (spin); 16092 frames free
-tane> kill 10
-killed pid 10 (beat); 16096 frames free
+MAC:     enforcing; this table is the whole policy (compiled in):
+  admin  system halt reboot fault audit format 
+  admin  memory alloc free | objects: admin user
+  admin  task   spawn kill | objects: admin user
+  admin  file   create read write delete | objects: admin user
+  user   memory alloc free | objects: user
+  user   task   spawn kill | objects: user
+  user   file   create read write delete | objects: user
+  Not listed = denied. Kernel objects: never. Domains: admin -> user only.
+Objects: labelled with their creator's domain; frames zeroed before reuse.
+Audit:   1 denials since boot (policy and quota). Limits: see top.
+tane> top
+DOMAIN  TASKS   FRAMES     FILES   CPU(last 1 s)  CPU CAP
+admin   0/6      0/4096     0/24     0% (  0 ticks)   70%
+user    0/3      0/24       0/8      0% (  0 ticks)   30%
+Shell and idle are not charged. CPU caps apply while other domains wait.
 tane> halt
 HALTED
 
@@ -397,8 +414,13 @@ IDT: 32 exception handlers, #DF on IST1 | PIT timer 100 Hz
 Tasks: preemptive round robin, up to 8 tasks
 Protection: NX data | kernel text read-only | null page unmapped | CR0.WP
 MAC: enforcing compiled-in policy | shell domain admin (drop lowers it)
+Disk: ATA found; disk is not formatted (admin: format)
 Type help. English keyboard / ASCII input.
 READY
+tane> format
+formatted: empty TaneFS, 32 files of up to 4096 bytes
+tane> write keep.txt survives reboot
+created keep.txt (15 bytes, label admin)
 tane> reboot
 REBOOTING
 TANE OS / RUST BARE METAL
@@ -409,15 +431,22 @@ IDT: 32 exception handlers, #DF on IST1 | PIT timer 100 Hz
 Tasks: preemptive round robin, up to 8 tasks
 Protection: NX data | kernel text read-only | null page unmapped | CR0.WP
 MAC: enforcing compiled-in policy | shell domain admin (drop lowers it)
+Disk: TaneFS mounted, 1 files
 Type help. English keyboard / ASCII input.
 READY
 tane> echo restarted
 restarted
+tane> cat keep.txt
+survives reboot
+tane> ls
+SLOT LABEL    SIZE  GEN NAME
+   0 admin      15    1 keep.txt
+1 file(s) readable by domain admin
 tane> mem
 Page tables: in kernel BSS (the boot sector's at 0x1000..0x4000 are retired)
 E820 table:  0x5000..0x5610 (written by the boot sector)
 Boot sector: 0x7c00..0x7e00
-Kernel:      0x10000..0x3a0d8 (172248 bytes incl. BSS)
+Kernel:      0x10000..0x40110 (196880 bytes incl. BSS)
 Shell stack: 0x80000..0x90000 (grows down)
 VGA text:    0xb8000
 First 1 GiB identity mapped: 4 KiB pages below 2 MiB, then 2 MiB pages.
@@ -441,7 +470,7 @@ tane> kill 0
 denied: admin may not kill objects of domain kernel (MAC policy; audited)
 tane> audit
 MAC denials: 1 since boot (newest 16 kept)
-#1      0.11s pid 1 admin kill kernel object (pid 0) DENIED
+#1      0.18s pid 1 admin kill kernel object (pid 0) DENIED by policy
 tane> drop
 domain admin -> user; this cannot be undone until reboot
 tane$ halt
@@ -469,26 +498,132 @@ started beat as pid 3 in domain user
 tane$ ps
 PID NAME   DOMAIN STATE       CPU s     COUNTER  STACK
   1 shell  user   running      0.07           -  0x80000 (kernel)
-  0 idle   kernel ready        0.07           -  0x38010 (kernel)
-  2 spin   admin  ready        0.30    80412724  0x101000 (4 frames)
+  0 idle   kernel ready        0.12           -  0x3e010 (kernel)
+  2 spin   admin  ready        0.31    71923478  0x101000 (4 frames)
   3 beat   user   sleeping     0.00           0  0x106000 (4 frames)
 tane$ kill 3
 killed pid 3 (beat); 32475 frames free
+tane$ ls
+SLOT LABEL    SIZE  GEN NAME
+0 file(s) readable by domain user
+tane$ cat keep.txt
+denied: user may not read objects of domain admin (MAC policy; audited)
+tane$ rm keep.txt
+denied: user may not delete objects of domain admin (MAC policy; audited)
+tane$ write keep.txt overwrite
+denied: user may not write objects of domain admin (MAC policy; audited)
+tane$ write u0 data
+created u0 (4 bytes, label user)
+tane$ write u1 data
+created u1 (4 bytes, label user)
+tane$ write u2 data
+created u2 (4 bytes, label user)
+tane$ write u3 data
+created u3 (4 bytes, label user)
+tane$ write u4 data
+created u4 (4 bytes, label user)
+tane$ write u5 data
+created u5 (4 bytes, label user)
+tane$ write u6 data
+created u6 (4 bytes, label user)
+tane$ write u7 data
+created u7 (4 bytes, label user)
+tane$ write u8 data
+denied: user files limit reached (8/8) for create (quota; audited)
+tane$ cat u3
+data
+tane$ rm u3
+removed u3
+tane$ ls
+SLOT LABEL    SIZE  GEN NAME
+   1 user        4    1 u0
+   2 user        4    1 u1
+   3 user        4    1 u2
+   5 user        4    1 u4
+   6 user        4    1 u5
+   7 user        4    1 u6
+   8 user        4    1 u7
+7 file(s) readable by domain user
+tane$ spawn spin
+started spin as pid 4 in domain user
+tane$ spawn beat
+started beat as pid 5 in domain user
+tane$ spawn beat
+started beat as pid 6 in domain user
+tane$ spawn beat
+denied: user tasks limit reached (3/3) for spawn (quota; audited)
+tane$ alloc
+allocated 0x116000 (zeroed); 32462 frames free
+tane$ alloc
+allocated 0x117000 (zeroed); 32461 frames free
+tane$ alloc
+allocated 0x118000 (zeroed); 32460 frames free
+tane$ alloc
+allocated 0x119000 (zeroed); 32459 frames free
+tane$ alloc
+allocated 0x11a000 (zeroed); 32458 frames free
+tane$ alloc
+allocated 0x11b000 (zeroed); 32457 frames free
+tane$ alloc
+allocated 0x11c000 (zeroed); 32456 frames free
+tane$ alloc
+allocated 0x11d000 (zeroed); 32455 frames free
+tane$ alloc
+allocated 0x11e000 (zeroed); 32454 frames free
+tane$ alloc
+allocated 0x11f000 (zeroed); 32453 frames free
+tane$ alloc
+allocated 0x120000 (zeroed); 32452 frames free
+tane$ alloc
+allocated 0x121000 (zeroed); 32451 frames free
+tane$ alloc
+denied: user frames limit reached (24/24) for alloc (quota; audited)
+tane$ sleep 2100
+slept 2100 ms
+tane$ top
+DOMAIN  TASKS   FRAMES     FILES   CPU(last 1 s)  CPU CAP
+admin   1/6      5/4096     1/24    70% ( 70 ticks)   70%
+user    3/3     24/24       7/8     30% ( 30 ticks)   30%
+Shell and idle are not charged. CPU caps apply while other domains wait.
+tane$ kill 4
+killed pid 4 (spin); 32455 frames free
 tane$ drop
 already in domain user; no command raises a domain
 tane$ su
 Unknown command. Type help.
 tane$ sec
 Subject: pid 1 (shell) in domain user
-Paging:  NX on | text 0x10000..0x19000 read-only | rodata read-only | data NX
+Paging:  NX on | text 0x10000..0x1c000 read-only | rodata read-only | data NX
          page 0 unmapped | CR0.WP on | IST1 stack for #DF | stack canaries
-MAC:     enforcing; policy compiled in, no command changes it
-  admin  halt reboot fault audit alloc spawn; free/kill admin+user objects
-  user   alloc spawn; free/kill user objects only
-  kernel objects (idle) are off limits; domains only go admin -> user
-Objects: tasks and alloc frames carry their creator's domain; frames are
-         zeroed before reuse. Audit: 7 denials since boot.
+MAC:     enforcing; this table is the whole policy (compiled in):
+  admin  system halt reboot fault audit format 
+  admin  memory alloc free | objects: admin user
+  admin  task   spawn kill | objects: admin user
+  admin  file   create read write delete | objects: admin user
+  user   memory alloc free | objects: user
+  user   task   spawn kill | objects: user
+  user   file   create read write delete | objects: user
+  Not listed = denied. Kernel objects: never. Domains: admin -> user only.
+Objects: labelled with their creator's domain; frames zeroed before reuse.
+Audit:   13 denials since boot (policy and quota). Limits: see top.
 tane$ 
+--- QEMU integrity ---
+TANE OS / RUST BARE METAL
+Self-made BIOS loader + Rust kernel. External crates: 0.
+64-bit mode | VGA + COM1 | PS/2 keyboard | no heap
+RAM: 7 E820 entries | 16096 free 4 KiB frames (64384 KiB) above 1 MiB
+IDT: 32 exception handlers, #DF on IST1 | PIT timer 100 Hz
+Tasks: preemptive round robin, up to 8 tasks
+Protection: NX data | kernel text read-only | null page unmapped | CR0.WP
+MAC: enforcing compiled-in policy | shell domain admin (drop lowers it)
+Disk: TaneFS mounted, 8 files
+Type help. English keyboard / ASCII input.
+READY
+tane> cat u0
+data
+tane> cat keep.txt
+error: checksum mismatch: file contents are damaged
+tane> 
 --- QEMU fault-de ---
 TANE OS / RUST BARE METAL
 Self-made BIOS loader + Rust kernel. External crates: 0.
@@ -498,19 +633,20 @@ IDT: 32 exception handlers, #DF on IST1 | PIT timer 100 Hz
 Tasks: preemptive round robin, up to 8 tasks
 Protection: NX data | kernel text read-only | null page unmapped | CR0.WP
 MAC: enforcing compiled-in policy | shell domain admin (drop lowers it)
+Disk: none (attach an IDE disk for TaneFS)
 Type help. English keyboard / ASCII input.
 READY
 tane> fault de
 
 CPU EXCEPTION 0 #DE: Divide error
 task: pid 1 (shell)
-rip=0000000000011e73 cs=0008 rflags=0000000000000246
-rsp=000000000008fe50 ss=0010
-rax=0000000000000001 rbx=0000000000000001 rcx=0000000000000200
-rdx=0000000000000000 rsi=000000000000005f rdi=0000000000000000
-rbp=0000000000000001 r8 =0000000000000002 r9 =000000000008ff4e
-r10=0000000000000000 r11=0000000000000003 r12=0000000000000001
-r13=000000000008fea8 r14=0000000000000000 r15=000000000008fe58
+rip=00000000000128d2 cs=0008 rflags=0000000000000246
+rsp=000000000008ee70 ss=0010
+rax=0000000000000001 rbx=0000000000000001 rcx=0000000000000000
+rdx=0000000000000000 rsi=0000000000000002 rdi=0000000000000001
+rbp=0000000000000001 r8 =0000000000000000 r9 =0000000000000005
+r10=0000000000000003 r11=0000000000000003 r12=000000000008efc8
+r13=0000000000000008 r14=0000000000000001 r15=00000000000b8000
 HALTED
 
 --- QEMU fault-ud ---
@@ -522,19 +658,20 @@ IDT: 32 exception handlers, #DF on IST1 | PIT timer 100 Hz
 Tasks: preemptive round robin, up to 8 tasks
 Protection: NX data | kernel text read-only | null page unmapped | CR0.WP
 MAC: enforcing compiled-in policy | shell domain admin (drop lowers it)
+Disk: none (attach an IDE disk for TaneFS)
 Type help. English keyboard / ASCII input.
 READY
 tane> fault ud
 
 CPU EXCEPTION 6 #UD: Invalid opcode
 task: pid 1 (shell)
-rip=0000000000011e48 cs=0008 rflags=0000000000000202
-rsp=000000000008fe50 ss=0010
-rax=0000000000000002 rbx=0000000000000001 rcx=0000000000000200
-rdx=0000000000000002 rsi=000000000000005f rdi=0000000000000000
-rbp=0000000000000002 r8 =0000000000000002 r9 =000000000008ff4e
-r10=0000000000000000 r11=0000000000000003 r12=0000000000000001
-r13=000000000008fea8 r14=0000000000000000 r15=000000000008fe58
+rip=00000000000128a5 cs=0008 rflags=0000000000000202
+rsp=000000000008ee70 ss=0010
+rax=0000000000000002 rbx=0000000000000002 rcx=0000000000000002
+rdx=0000000000000003 rsi=0000000000000002 rdi=0000000000000001
+rbp=0000000000000001 r8 =0000000000000000 r9 =0000000000000005
+r10=0000000000000003 r11=0000000000000003 r12=000000000008efc8
+r13=0000000000000008 r14=0000000000000001 r15=00000000000b8000
 HALTED
 
 --- QEMU fault-gp ---
@@ -546,6 +683,7 @@ IDT: 32 exception handlers, #DF on IST1 | PIT timer 100 Hz
 Tasks: preemptive round robin, up to 8 tasks
 Protection: NX data | kernel text read-only | null page unmapped | CR0.WP
 MAC: enforcing compiled-in policy | shell domain admin (drop lowers it)
+Disk: none (attach an IDE disk for TaneFS)
 Type help. English keyboard / ASCII input.
 READY
 tane> fault gp
@@ -553,13 +691,13 @@ tane> fault gp
 CPU EXCEPTION 13 #GP: General protection fault
 task: pid 1 (shell)
 error=0x0
-rip=0000000000011e5d cs=0008 rflags=0000000000000202
-rsp=000000000008fe50 ss=0010
-rax=8000000000000000 rbx=0000000000000001 rcx=0000000000000200
-rdx=0000000000000002 rsi=000000000000005f rdi=0000000000000000
-rbp=0000000000000003 r8 =0000000000000002 r9 =000000000008ff4e
-r10=0000000000000000 r11=0000000000000003 r12=0000000000000001
-r13=000000000008fea8 r14=0000000000000000 r15=000000000008fe58
+rip=00000000000128ba cs=0008 rflags=0000000000000202
+rsp=000000000008ee70 ss=0010
+rax=8000000000000000 rbx=0000000000000003 rcx=0000000000000002
+rdx=0000000000000003 rsi=0000000000000002 rdi=0000000000000001
+rbp=0000000000000001 r8 =0000000000000000 r9 =0000000000000005
+r10=0000000000000003 r11=0000000000000003 r12=000000000008efc8
+r13=0000000000000008 r14=0000000000000001 r15=00000000000b8000
 HALTED
 
 --- QEMU fault-pf ---
@@ -571,6 +709,7 @@ IDT: 32 exception handlers, #DF on IST1 | PIT timer 100 Hz
 Tasks: preemptive round robin, up to 8 tasks
 Protection: NX data | kernel text read-only | null page unmapped | CR0.WP
 MAC: enforcing compiled-in policy | shell domain admin (drop lowers it)
+Disk: none (attach an IDE disk for TaneFS)
 Type help. English keyboard / ASCII input.
 READY
 tane> fault pf
@@ -578,13 +717,13 @@ tane> fault pf
 CPU EXCEPTION 14 #PF: Page fault
 task: pid 1 (shell)
 error=0x0 (not-present read) cr2=0x0000000040000000
-rip=0000000000011e3a cs=0008 rflags=0000000000000202
-rsp=000000000008fe50 ss=0010
-rax=0000000040000000 rbx=0000000000000001 rcx=0000000000000200
-rdx=0000000000000002 rsi=000000000000005f rdi=0000000000000000
-rbp=0000000000000004 r8 =0000000000000002 r9 =000000000008ff4e
-r10=0000000000000000 r11=0000000000000003 r12=0000000000000001
-r13=000000000008fea8 r14=0000000000000000 r15=000000000008fe58
+rip=0000000000012897 cs=0008 rflags=0000000000000202
+rsp=000000000008ee70 ss=0010
+rax=0000000040000000 rbx=0000000000000004 rcx=0000000000000002
+rdx=0000000000000003 rsi=0000000000000002 rdi=0000000000000001
+rbp=0000000000000001 r8 =0000000000000000 r9 =0000000000000005
+r10=0000000000000003 r11=0000000000000003 r12=000000000008efc8
+r13=0000000000000008 r14=0000000000000001 r15=00000000000b8000
 HALTED
 
 --- QEMU fault-df ---
@@ -596,6 +735,7 @@ IDT: 32 exception handlers, #DF on IST1 | PIT timer 100 Hz
 Tasks: preemptive round robin, up to 8 tasks
 Protection: NX data | kernel text read-only | null page unmapped | CR0.WP
 MAC: enforcing compiled-in policy | shell domain admin (drop lowers it)
+Disk: none (attach an IDE disk for TaneFS)
 Type help. English keyboard / ASCII input.
 READY
 tane> fault df
@@ -603,13 +743,13 @@ tane> fault df
 CPU EXCEPTION 8 #DF: Double fault
 task: pid 1 (shell)
 error=0x0
-rip=0000000000011f88 cs=0008 rflags=0000000000000202
+rip=0000000000012a44 cs=0008 rflags=0000000000000202
 rsp=0000000040001000 ss=0010
-rax=0000000040001000 rbx=0000000000000001 rcx=0000000000000200
-rdx=0000000000000002 rsi=000000000000005f rdi=0000000000000000
-rbp=0000000000000005 r8 =0000000000000002 r9 =000000000008ff4e
-r10=0000000000000000 r11=0000000000000003 r12=0000000000000001
-r13=000000000008fea8 r14=0000000000000000 r15=000000000008fe58
+rax=0000000040001000 rbx=0000000000000005 rcx=0000000000000002
+rdx=0000000000000003 rsi=0000000000000002 rdi=0000000000000001
+rbp=0000000000000001 r8 =0000000000000000 r9 =0000000000000005
+r10=0000000000000003 r11=0000000000000003 r12=000000000008efc8
+r13=0000000000000008 r14=0000000000000001 r15=00000000000b8000
 HALTED
 
 --- QEMU fault-null ---
@@ -621,6 +761,7 @@ IDT: 32 exception handlers, #DF on IST1 | PIT timer 100 Hz
 Tasks: preemptive round robin, up to 8 tasks
 Protection: NX data | kernel text read-only | null page unmapped | CR0.WP
 MAC: enforcing compiled-in policy | shell domain admin (drop lowers it)
+Disk: none (attach an IDE disk for TaneFS)
 Type help. English keyboard / ASCII input.
 READY
 tane> fault null
@@ -628,13 +769,13 @@ tane> fault null
 CPU EXCEPTION 14 #PF: Page fault
 task: pid 1 (shell)
 error=0x0 (not-present read) cr2=0x0000000000000000
-rip=0000000000011e4e cs=0008 rflags=0000000000000246
-rsp=000000000008fe50 ss=0010
-rax=0000000000000000 rbx=0000000000000001 rcx=0000000000000200
-rdx=0000000000000002 rsi=000000000000005f rdi=0000000000000000
-rbp=0000000000000006 r8 =0000000000000004 r9 =000000000000006c
-r10=0000000000000000 r11=0000000000000005 r12=0000000000000001
-r13=000000000008fea8 r14=0000000000000000 r15=000000000008fe58
+rip=00000000000128ab cs=0008 rflags=0000000000000246
+rsp=000000000008ee70 ss=0010
+rax=0000000000000000 rbx=0000000000000006 rcx=0000000000000002
+rdx=0000000000000003 rsi=0000000000000002 rdi=0000000000000001
+rbp=0000000000000001 r8 =0000000000000000 r9 =0000000000000005
+r10=0000000000000003 r11=0000000000000003 r12=000000000008efc8
+r13=000000000000000a r14=0000000000000001 r15=00000000000b8000
 HALTED
 
 --- QEMU fault-ro ---
@@ -646,6 +787,7 @@ IDT: 32 exception handlers, #DF on IST1 | PIT timer 100 Hz
 Tasks: preemptive round robin, up to 8 tasks
 Protection: NX data | kernel text read-only | null page unmapped | CR0.WP
 MAC: enforcing compiled-in policy | shell domain admin (drop lowers it)
+Disk: none (attach an IDE disk for TaneFS)
 Type help. English keyboard / ASCII input.
 READY
 tane> fault ro
@@ -653,13 +795,13 @@ tane> fault ro
 CPU EXCEPTION 14 #PF: Page fault
 task: pid 1 (shell)
 error=0x3 (protection write) cr2=0x0000000000010000
-rip=0000000000011e67 cs=0008 rflags=0000000000000202
-rsp=000000000008fe50 ss=0010
-rax=0000000000010000 rbx=0000000000000001 rcx=0000000000000200
-rdx=0000000000000002 rsi=000000000000005f rdi=0000000000000000
-rbp=0000000000000007 r8 =0000000000000002 r9 =000000000008ff4e
-r10=0000000000000000 r11=0000000000000003 r12=0000000000000001
-r13=000000000008fea8 r14=0000000000000000 r15=000000000008fe58
+rip=00000000000128c4 cs=0008 rflags=0000000000000202
+rsp=000000000008ee70 ss=0010
+rax=0000000000010000 rbx=0000000000000007 rcx=0000000000000002
+rdx=0000000000000003 rsi=0000000000000002 rdi=0000000000000001
+rbp=0000000000000001 r8 =0000000000000000 r9 =0000000000000005
+r10=0000000000000003 r11=0000000000000003 r12=000000000008efc8
+r13=0000000000000008 r14=0000000000000001 r15=00000000000b8000
 HALTED
 
 --- QEMU fault-nx ---
@@ -671,20 +813,21 @@ IDT: 32 exception handlers, #DF on IST1 | PIT timer 100 Hz
 Tasks: preemptive round robin, up to 8 tasks
 Protection: NX data | kernel text read-only | null page unmapped | CR0.WP
 MAC: enforcing compiled-in policy | shell domain admin (drop lowers it)
+Disk: none (attach an IDE disk for TaneFS)
 Type help. English keyboard / ASCII input.
 READY
 tane> fault nx
 
 CPU EXCEPTION 14 #PF: Page fault
 task: pid 1 (shell)
-error=0x11 (protection read fetch) cr2=0x000000000001e000
-rip=000000000001e000 cs=0008 rflags=0000000000000202
-rsp=000000000008fe48 ss=0010
-rax=000000000001e000 rbx=0000000000000001 rcx=0000000000000200
-rdx=0000000000000002 rsi=000000000000005f rdi=0000000000000000
-rbp=0000000000000008 r8 =0000000000000002 r9 =000000000008ff4e
-r10=0000000000000000 r11=0000000000000003 r12=0000000000000001
-r13=000000000008fea8 r14=0000000000000000 r15=000000000008fe58
+error=0x11 (protection read fetch) cr2=0x0000000000023000
+rip=0000000000023000 cs=0008 rflags=0000000000000202
+rsp=000000000008ee68 ss=0010
+rax=0000000000023000 rbx=0000000000000008 rcx=0000000000000002
+rdx=0000000000000003 rsi=0000000000000002 rdi=0000000000000001
+rbp=0000000000000001 r8 =0000000000000000 r9 =0000000000000005
+r10=0000000000000003 r11=0000000000000003 r12=000000000008efc8
+r13=0000000000000008 r14=0000000000000001 r15=00000000000b8000
 HALTED
 
 --- QEMU vga-only ---

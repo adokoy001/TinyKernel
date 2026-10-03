@@ -12,8 +12,17 @@ pub enum Action<'a> {
     Alloc,
     Tasks,
     Security,
+    Resources,
     Audit,
     DropToUser,
+    Disk,
+    Format,
+    List,
+    Cat(Result<&'a str, &'static str>),
+    /// Name and text; `append` keeps the old contents.
+    Write { name: &'a str, text: &'a str, append: bool },
+    WriteUsage(&'static str),
+    Remove(Result<&'a str, &'static str>),
     Echo(&'a str),
     Calc(Result<i64, &'static str>),
     Sleep(Result<u64, &'static str>),
@@ -90,6 +99,17 @@ pub fn parse(line: &str) -> Action<'_> {
         "sleep" => Action::Sleep(sleep(text)),
         "fault" => Action::Fault(fault(text)),
         "free" => Action::Free(address(text)),
+        "cat" => Action::Cat(one_name(text, "usage: cat NAME")),
+        "rm" => Action::Remove(one_name(text, "usage: rm NAME")),
+        "write" | "append" => {
+            let append = command == "append";
+            // One separator after the name; the rest of the line is kept as is.
+            match text.split_once(|c: char| c.is_ascii_whitespace()) {
+                Some((name, body)) if !name.is_empty() => Action::Write { name, text: body, append },
+                _ if !text.is_empty() && !append => Action::Write { name: text, text: "", append },
+                _ => Action::WriteUsage(if append { "usage: append NAME TEXT" } else { "usage: write NAME TEXT" }),
+            }
+        }
         "spawn" => Action::Spawn(spawn(text)),
         "kill" => Action::Kill(text.trim_ascii().parse::<u32>().ok().filter(|_| digits(text)).ok_or(KILL_USAGE)),
         _ if !text.is_empty() => Action::Unknown,
@@ -100,6 +120,10 @@ pub fn parse(line: &str) -> Action<'_> {
         "alloc" => Action::Alloc,
         "ps" => Action::Tasks,
         "sec" => Action::Security,
+        "top" => Action::Resources,
+        "disk" => Action::Disk,
+        "format" => Action::Format,
+        "ls" => Action::List,
         "audit" => Action::Audit,
         "drop" => Action::DropToUser,
         "clear" => Action::Clear,
@@ -107,6 +131,11 @@ pub fn parse(line: &str) -> Action<'_> {
         "reboot" => Action::Reboot,
         _ => Action::Unknown,
     }
+}
+
+fn one_name<'a>(text: &'a str, usage: &'static str) -> Result<&'a str, &'static str> {
+    let name = text.trim_ascii();
+    if name.is_empty() || name.contains(|c: char| c.is_ascii_whitespace()) { Err(usage) } else { Ok(name) }
 }
 
 /// Rust's integer parsing accepts a leading `+`; commands take digits only.
@@ -196,6 +225,10 @@ mod tests {
             ("sec", Action::Security),
             ("audit", Action::Audit),
             ("drop", Action::DropToUser),
+            ("top", Action::Resources),
+            ("disk", Action::Disk),
+            ("format", Action::Format),
+            ("ls", Action::List),
         ] {
             assert_eq!(parse(line), expected);
         }
@@ -317,5 +350,21 @@ mod tests {
             assert_eq!(parse(line), Action::Kill(Err("usage: kill PID")), "{line}");
         }
         assert_eq!(TaskKind::Beat.name(), "beat");
+    }
+
+    #[test]
+    fn file_commands() {
+        assert_eq!(parse("cat notes"), Action::Cat(Ok("notes")));
+        assert_eq!(parse("cat"), Action::Cat(Err("usage: cat NAME")));
+        assert_eq!(parse("cat a b"), Action::Cat(Err("usage: cat NAME")));
+        assert_eq!(parse("rm  old "), Action::Remove(Ok("old")));
+        assert_eq!(parse("rm"), Action::Remove(Err("usage: rm NAME")));
+        assert_eq!(parse("write notes hello  world"), Action::Write { name: "notes", text: "hello  world", append: false });
+        assert_eq!(parse("write empty"), Action::Write { name: "empty", text: "", append: false });
+        assert_eq!(parse("append log  line"), Action::Write { name: "log", text: " line", append: true });
+        assert_eq!(parse("write"), Action::WriteUsage("usage: write NAME TEXT"));
+        assert_eq!(parse("append log"), Action::WriteUsage("usage: append NAME TEXT"));
+        assert_eq!(parse("ls -l"), Action::Unknown);
+        assert_eq!(parse("format now"), Action::Unknown);
     }
 }

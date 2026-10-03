@@ -139,7 +139,10 @@ pub fn switch(frame: *mut Frame, prefer: Option<usize>) -> *mut Frame {
         }
         let next = match prefer {
             Some(slot) if states[slot] == State::Ready => slot,
-            _ => sched::next(states, current, IDLE),
+            // A domain past its CPU share waits while others are ready.
+            _ => sched::next(states, current, IDLE, |slot| {
+                tasks[slot].owns_stack && security::over_cpu_share(tasks[slot].domain)
+            }),
         };
         CURRENT = next;
         tasks[next].context as *mut Frame
@@ -150,6 +153,7 @@ unsafe fn release(states: &mut [State; MAX_TASKS], tasks: &mut [Task; MAX_TASKS]
     if tasks[slot].owns_stack {
         let freed = crate::with_frames(|frames| frames.free_contiguous(tasks[slot].stack, STACK_FRAMES));
         assert!(freed.is_ok(), "task stack frames were not allocated");
+        security::release(tasks[slot].domain, 1, STACK_FRAMES as u32);
     }
     tasks[slot] = Task::EMPTY;
     states[slot] = State::Free;
@@ -159,7 +163,10 @@ unsafe fn release(states: &mut [State; MAX_TASKS], tasks: &mut [Task; MAX_TASKS]
 pub fn on_timer(frame: *mut Frame, now: u64) -> *mut Frame {
     unsafe {
         let (states, tasks) = table();
-        tasks[CURRENT].cpu_ticks += 1;
+        let task = &mut tasks[CURRENT];
+        task.cpu_ticks += 1;
+        // Only spawned tasks count against a domain's CPU share.
+        security::tick(if task.owns_stack { Some(task.domain) } else { None });
         sched::wake_sleepers(states, now);
         if now % INPUT_RECHECK_TICKS == 0 {
             sched::wake_input(states);
@@ -218,8 +225,11 @@ pub fn spawn(kind: TaskKind) -> Result<u32, SpawnError> {
         let (states, tasks) = table();
         let slot = states.iter().position(|state| *state == State::Free)
             .ok_or(SpawnError::Failed("task table is full (8 tasks)"))?;
-        let stack = crate::with_frames(|frames| frames.allocate_contiguous(STACK_FRAMES))
-            .ok_or(SpawnError::Failed("no free physical frames for a stack"))?;
+        security::charge(Op::Spawn, 1, STACK_FRAMES as u32).map_err(SpawnError::Denied)?;
+        let Some(stack) = crate::with_frames(|frames| frames.allocate_contiguous(STACK_FRAMES)) else {
+            security::release(tasks[CURRENT].domain, 1, STACK_FRAMES as u32);
+            return Err(SpawnError::Failed("no free physical frames for a stack"));
+        };
         // Object reuse: a new stack never shows a previous owner's data.
         for offset in (0..STACK_BYTES).step_by(8) {
             write_volatile((stack + offset) as *mut u64, 0);

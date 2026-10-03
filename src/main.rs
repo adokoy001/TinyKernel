@@ -12,13 +12,17 @@ macro_rules! kprintln {
     }};
 }
 
+mod ata;
 mod frames;
+mod fs;
 mod interrupts;
 mod mac;
 mod paging;
+mod resources;
 mod sched;
 mod security;
 mod shell;
+mod storage;
 mod tasks;
 
 use core::arch::asm;
@@ -123,6 +127,12 @@ pub extern "C" fn _start() -> ! {
     kprintln!("Protection: {} | kernel text read-only | null page unmapped | CR0.WP",
         if paging::nx_enabled() { "NX data" } else { "NX unsupported" });
     kprintln!("MAC: enforcing compiled-in policy | shell domain admin (drop lowers it)");
+    storage::init();
+    match storage::status() {
+        storage::Status::Absent => kprintln!("Disk: none (attach an IDE disk for TaneFS)"),
+        storage::Status::Unformatted { error, .. } => kprintln!("Disk: ATA found; {}", error.message()),
+        storage::Status::Mounted { files, .. } => kprintln!("Disk: TaneFS mounted, {} files", files),
+    }
     if !SERIAL_PRESENT.load(Ordering::Relaxed) {
         kprintln!("COM1 not detected; VGA and keyboard only.");
     }
@@ -184,33 +194,27 @@ fn prompt() {
 fn execute(line: &str) {
     match shell::parse(line) {
         Action::Help => {
-            kprintln!("help          Show commands");
-            kprintln!("about         Describe this kernel");
-            kprintln!("mem           Show the memory layout, E820 map and frames");
-            kprintln!("alloc         Take one zeroed 4 KiB physical frame");
-            kprintln!("free ADDR     Return a frame (example: free 0x100000)");
-            kprintln!("ps            List tasks");
-            kprintln!("spawn KIND    Start a task: spin (CPU), beat (sleeps), once (exits)");
-            kprintln!("kill PID      Stop a task and free its stack frames");
-            kprintln!("uptime        Time since boot, counted by timer interrupts");
-            kprintln!("echo TEXT     Print text");
-            kprintln!("calc A OP B   Integer + - * / (example: calc 12 * 3)");
-            kprintln!("sleep MS      Block the shell for MS milliseconds (0-60000)");
-            kprintln!("fault KIND    Raise a CPU exception: bp de ud gp pf df null ro nx");
-            kprintln!("sec           Show memory protection and the MAC policy");
-            kprintln!("audit         Show MAC denials (admin only)");
-            kprintln!("drop          Lower this shell to the user domain until reboot");
-            kprintln!("clear         Clear the screen");
-            kprintln!("reboot        Restart the virtual machine");
-            kprintln!("halt          Stop the CPU (close QEMU to exit)");
+            kprintln!("help | about | uptime | clear  This list | the kernel | time since boot");
+            kprintln!("echo TEXT | calc A OP B        Print text | integer + - * / (calc 12 * 3)");
+            kprintln!("sleep MS                       Block the shell for MS ms (0-60000)");
+            kprintln!("mem | alloc | free ADDR        Memory map | take a zeroed frame | return it");
+            kprintln!("ps | top                       Tasks | per-domain resource use and limits");
+            kprintln!("spawn spin|beat|once | kill N  Start a task | stop one, freeing its stack");
+            kprintln!("disk | format                  Disk status | create an empty TaneFS (admin)");
+            kprintln!("ls | cat NAME | rm NAME        Files you may read | show one | delete one");
+            kprintln!("write NAME TEXT | append ...   Replace or extend a file, creating it");
+            kprintln!("sec | audit | drop             Policy | denials (admin) | lower to user");
+            kprintln!("fault KIND                     Exception check: bp de ud gp pf df null ro nx");
+            kprintln!("reboot | halt                  Restart | stop the CPU (admin)");
         }
         Action::About => {
-            kprintln!("Tane OS 0.4 - a small original Rust kernel.");
+            kprintln!("Tane OS 0.5 - a small original Rust kernel.");
             kprintln!("No Linux code, GRUB, external crates, libc, or host OS calls.");
             kprintln!("Firmware loads our 512-byte boot sector; it loads this kernel.");
             kprintln!("Ring 0, own GDT/TSS/IDT, PIT at {} Hz, E820 RAM in 4 KiB frames.", interrupts::TIMER_HZ);
             kprintln!("Preemptive round-robin kernel tasks with stacks from the frame allocator.");
-            kprintln!("W^X paging, NX data, mandatory access control with an audit log.");
+            kprintln!("W^X paging, NX data, table-driven MAC, per-domain quotas, audit log.");
+            kprintln!("ATA disk with TaneFS: labelled, checksummed files that survive reboots.");
             kprintln!("CPU exceptions print registers; no process isolation, filesystem, or network.");
         }
         Action::Memory => {
@@ -240,7 +244,8 @@ fn execute(line: &str) {
         Action::Echo(text) => kprintln!("{}", text),
         Action::Calc(Ok(result)) => kprintln!("= {}", result),
         Action::Calc(Err(error)) | Action::Sleep(Err(error)) | Action::Fault(Err(error))
-        | Action::Free(Err(error)) | Action::Spawn(Err(error)) | Action::Kill(Err(error)) => kprintln!("error: {}", error),
+        | Action::Free(Err(error)) | Action::Spawn(Err(error)) | Action::Kill(Err(error))
+        | Action::Cat(Err(error)) | Action::Remove(Err(error)) | Action::WriteUsage(error) => kprintln!("error: {}", error),
         Action::Sleep(Ok(ms)) => {
             // Round up so the wait is never shorter than requested.
             tasks::sleep_until(interrupts::ticks() + (ms * interrupts::TIMER_HZ).div_ceil(1000));
@@ -290,6 +295,55 @@ fn execute(line: &str) {
             }
         }
         Action::Security => show_security(),
+        Action::Disk => match storage::status() {
+            storage::Status::Absent => kprintln!("No ATA disk on the primary channel."),
+            storage::Status::Unformatted { model, sectors, error } =>
+                kprintln!("ATA disk \"{}\", {} KiB: {}", model, sectors / 2, error.message()),
+            storage::Status::Mounted { model, sectors, files } =>
+                kprintln!("ATA disk \"{}\", {} KiB: TaneFS mounted, {} of {} files used", model, sectors / 2,
+                    files, fs::MAX_FILES),
+        },
+        Action::Format => match storage::format() {
+            Ok(()) => kprintln!("formatted: empty TaneFS, {} files of up to {} bytes", fs::MAX_FILES, fs::MAX_FILE_SIZE),
+            Err(error) => report_storage(error),
+        },
+        Action::List => {
+            kprintln!("SLOT LABEL    SIZE  GEN NAME");
+            let mut shown = 0;
+            let result = storage::list(|file| {
+                kprintln!("{:>4} {:<6} {:>6} {:>4} {}", file.slot, file.label.name(), file.size, file.generation, file.name);
+                shown += 1;
+            });
+            match result {
+                Ok(()) => kprintln!("{} file(s) readable by domain {}", shown, tasks::current_domain().name()),
+                Err(error) => report_storage(error),
+            }
+        }
+        Action::Cat(Ok(name)) => {
+            let mut buffer = [0u8; fs::MAX_FILE_SIZE];
+            match storage::read(name, &mut buffer) {
+                Ok(size) => {
+                    for &byte in &buffer[..size] {
+                        // Show text as is; other bytes as dots.
+                        console().byte(if byte == b'\n' || (b' '..=b'~').contains(&byte) { byte } else { b'.' });
+                    }
+                    if size == 0 || buffer[size - 1] != b'\n' {
+                        kprintln!();
+                    }
+                }
+                Err(error) => report_storage(error),
+            }
+        }
+        Action::Write { name, text, append } => match storage::write(name, text.as_bytes(), append) {
+            Ok(true) => kprintln!("created {} ({} bytes, label {})", name, text.len(), tasks::current_domain().name()),
+            Ok(false) => kprintln!("{} {} ({} bytes)", if append { "appended to" } else { "wrote" }, name, text.len()),
+            Err(error) => report_storage(error),
+        },
+        Action::Remove(Ok(name)) => match storage::remove(name) {
+            Ok(()) => kprintln!("removed {}", name),
+            Err(error) => report_storage(error),
+        },
+        Action::Resources => show_resources(),
         Action::Audit => {
             if permitted(Op::ReadAudit) {
                 kprintln!("MAC denials: {} since boot (newest {} kept)", security::denials(), security::AUDIT_RECORDS);
@@ -300,10 +354,12 @@ fn execute(line: &str) {
                     if let Some(object) = record.object {
                         write!(console(), " {} object", object.name()).ok();
                     }
+                    let reason = match record.reason { mac::Reason::Policy => "policy", mac::Reason::Quota => "quota" };
                     match (record.op, record.target) {
-                        (Op::Kill, Some(pid)) => kprintln!(" (pid {}) DENIED", pid),
-                        (_, Some(address)) => kprintln!(" (0x{:x}) DENIED", address),
-                        (_, None) => kprintln!(" DENIED"),
+                        (Op::Kill, Some(pid)) => kprintln!(" (pid {}) DENIED by {}", pid, reason),
+                        (Op::Free, Some(address)) => kprintln!(" (0x{:x}) DENIED by {}", address, reason),
+                        (_, Some(slot)) => kprintln!(" (file #{}) DENIED by {}", slot, reason),
+                        (_, None) => kprintln!(" DENIED by {}", reason),
                     }
                 });
             }
@@ -357,6 +413,11 @@ fn permitted(op: Op) -> bool {
 }
 
 fn report_denied(denied: Denied) {
+    if let Some(quota) = denied.quota {
+        kprintln!("denied: {} {} limit reached ({}/{}) for {} (quota; audited)", denied.subject.name(),
+            quota.resource.name(), quota.used, quota.limit, denied.op.name());
+        return;
+    }
     match denied.object {
         Some(object) => kprintln!("denied: {} may not {} objects of domain {} (MAC policy; audited)",
             denied.subject.name(), denied.op.name(), object.name()),
@@ -370,11 +431,15 @@ fn allocate_frame() -> Result<(u64, usize), Result<&'static str, Denied>> {
     let domain = tasks::current_domain();
     let address = with_frames(|frames| {
         let registry = unsafe { &mut *addr_of_mut!(ALLOCATED) };
-        let slot = registry.iter().position(Option::is_none).ok_or("alloc registry is full (32 frames)")?;
-        let address = frames.allocate().ok_or("no free physical frames")?;
+        let slot = registry.iter().position(Option::is_none).ok_or(Ok("alloc registry is full (32 frames)"))?;
+        security::charge(Op::Alloc, 0, 1).map_err(Err)?;
+        let Some(address) = frames.allocate() else {
+            security::release(domain, 0, 1);
+            return Err(Ok("no free physical frames"));
+        };
         registry[slot] = Some((address, domain));
         Ok(address)
-    }).map_err(Ok)?;
+    })?;
     // Object reuse: zero before use. Identity mapping makes it writable here.
     for offset in (0..FRAME_SIZE).step_by(8) {
         unsafe { write_volatile((address + offset) as *mut u64, 0); }
@@ -410,11 +475,41 @@ fn free_frame(address: u64) -> FreeOutcome {
         match frames.free(address) {
             Ok(()) => {
                 registry[slot] = None;
+                if let Some(owner) = label {
+                    security::release(owner, 0, 1);
+                }
                 FreeOutcome::Freed(frames.free_frames())
             }
             Err(error) => FreeOutcome::Error(error.message()),
         }
     })
+}
+
+fn report_storage(error: storage::StorageError) {
+    match error {
+        storage::StorageError::NoDisk => kprintln!("error: no disk"),
+        storage::StorageError::Denied(denied) => report_denied(denied),
+        storage::StorageError::Fs(error) => kprintln!("error: {}", error.message()),
+    }
+}
+
+fn show_resources() {
+    kprintln!("DOMAIN  TASKS   FRAMES     FILES   CPU(last 1 s)  CPU CAP");
+    for domain in [Domain::Admin, Domain::User] {
+        let usage = security::usage(domain);
+        let limit = resources::limits(domain);
+        let files = storage::files_owned(domain).map(|n| n as i64).unwrap_or(-1);
+        write!(console(), "{:<6} {:>2}/{:<2} {:>5}/{:<5} ", domain.name(), usage.tasks, limit.tasks,
+            usage.frames, limit.frames).ok();
+        if files < 0 {
+            write!(console(), "   -/{:<3}", limit.files).ok();
+        } else {
+            write!(console(), "{:>4}/{:<3}", files, limit.files).ok();
+        }
+        kprintln!("  {:>3}% ({:>3} ticks)  {:>3}%", usage.last_window_ticks * 100 / resources::CPU_WINDOW,
+            usage.last_window_ticks, limit.cpu_percent);
+    }
+    kprintln!("Shell and idle are not charged. CPU caps apply while other domains wait.");
 }
 
 fn show_security() {
@@ -424,12 +519,23 @@ fn show_security() {
     kprintln!("Paging:  NX {} | text 0x{:x}..0x{:x} read-only | rodata read-only | data NX",
         if paging::nx_enabled() { "on" } else { "unsupported" }, text_start, text_end);
     kprintln!("         page 0 unmapped | CR0.WP on | IST1 stack for #DF | stack canaries");
-    kprintln!("MAC:     enforcing; policy compiled in, no command changes it");
-    kprintln!("  admin  halt reboot fault audit alloc spawn; free/kill admin+user objects");
-    kprintln!("  user   alloc spawn; free/kill user objects only");
-    kprintln!("  kernel objects (idle) are off limits; domains only go admin -> user");
-    kprintln!("Objects: tasks and alloc frames carry their creator's domain; frames are");
-    kprintln!("         zeroed before reuse. Audit: {} denials since boot.", security::denials());
+    kprintln!("MAC:     enforcing; this table is the whole policy (compiled in):");
+    for rule in mac::POLICY.iter() {
+        write!(console(), "  {:<6} {:<7}", rule.subject.name(), rule.class.name()).ok();
+        for op in rule.ops {
+            write!(console(), "{} ", op.name()).ok();
+        }
+        if rule.ops.iter().any(|op| op.has_object()) {
+            write!(console(), "| objects:").ok();
+            for label in rule.objects {
+                write!(console(), " {}", label.name()).ok();
+            }
+        }
+        kprintln!();
+    }
+    kprintln!("  Not listed = denied. Kernel objects: never. Domains: admin -> user only.");
+    kprintln!("Objects: labelled with their creator's domain; frames zeroed before reuse.");
+    kprintln!("Audit:   {} denials since boot (policy and quota). Limits: see top.", security::denials());
 }
 
 /// Deliberately execute an instruction that makes the CPU raise `fault`.
