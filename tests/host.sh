@@ -3,7 +3,7 @@
 set -eu
 cd "$(dirname "$0")/.."
 mkdir -p build
-for module in shell frames sched mac fs; do
+for module in shell frames sched mac fs inet; do
     rustc --edition=2021 --test "src/$module.rs" -o "build/$module-tests"
     "./build/$module-tests" -q
 done

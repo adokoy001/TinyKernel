@@ -12,3 +12,4 @@ build/mac-tests
 build/fs-tests
 build/resources-tests
 build/disk.img
+build/inet-tests
