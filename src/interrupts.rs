@@ -1,9 +1,11 @@
 //! CPU exceptions, the legacy 8259 PICs and the 8254 PIT timer.
 //!
 //! The kernel installs its own GDT with a TSS so that a double fault runs on a
-//! separate known-good stack (IST1). Vectors 0..=31 are CPU exceptions and
-//! 32..=47 are the remapped PIC IRQs. Every stub saves the general registers
-//! and calls `tane_interrupt_dispatch` with a pointer to the saved frame.
+//! separate known-good stack (IST1). Vectors 0..=31 are CPU exceptions,
+//! 32..=47 are the remapped PIC IRQs and 48 is the task yield. Every stub
+//! saves the general registers and calls `tane_interrupt_dispatch` with a
+//! pointer to the saved frame. The dispatcher returns the frame to resume:
+//! returning another task's saved frame is the context switch.
 
 use core::arch::{asm, global_asm};
 use core::fmt::Write;
@@ -17,6 +19,7 @@ const IRQ_BASE: u64 = 32;
 const IRQ_TIMER: u64 = 0;
 const IRQ_KEYBOARD: u64 = 1;
 const IRQ_COM1: u64 = 4;
+const YIELD_VECTOR: u64 = 48;
 
 const KERNEL_CODE: u16 = 0x08;
 const KERNEL_DATA: u16 = 0x10;
@@ -51,11 +54,12 @@ struct DescriptorPointer {
 }
 
 extern "C" {
-    static tane_isr_table: [u64; 48];
+    static tane_isr_table: [u64; 49];
 }
 
 /// Registers saved by `isr_common`, lowest address first.
 #[repr(C)]
+#[derive(Default)]
 pub struct Frame {
     r15: u64, r14: u64, r13: u64, r12: u64, r11: u64, r10: u64, r9: u64, r8: u64,
     rbp: u64, rdi: u64, rsi: u64, rdx: u64, rcx: u64, rbx: u64, rax: u64,
@@ -66,6 +70,22 @@ pub struct Frame {
     rflags: u64,
     rsp: u64,
     ss: u64,
+}
+
+impl Frame {
+    /// A frame that `iretq` turns into a call of `entry(argument)` on a new
+    /// stack, with interrupts enabled.
+    pub fn task(entry: extern "C" fn(u64) -> !, argument: u64, rsp: u64) -> Self {
+        Frame {
+            rdi: argument,
+            rip: entry as usize as u64,
+            cs: KERNEL_CODE as u64,
+            rflags: 0x202,
+            rsp,
+            ss: KERNEL_DATA as u64,
+            ..Frame::default()
+        }
+    }
 }
 
 // Vectors whose CPU-pushed error code is kept; the others push a zero.
@@ -115,7 +135,7 @@ ISR_NOERR 28
 ISR_ERR   29
 ISR_ERR   30
 ISR_NOERR 31
-.irp n, 32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47
+.irp n, 32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48
 ISR_NOERR \n
 .endr
 
@@ -139,6 +159,7 @@ isr_common:
     mov rdi, rsp
     cld
     call tane_interrupt_dispatch
+    mov rsp, rax              /* The frame to resume, possibly another task's. */
     pop r15
     pop r14
     pop r13
@@ -161,7 +182,7 @@ isr_common:
 .balign 8
 .global tane_isr_table
 tane_isr_table:
-.irp n, 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47
+.irp n, 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48
     .quad isr_\n
 .endr
 .section .text
@@ -202,7 +223,8 @@ const EXCEPTIONS: [(&str, &str); 32] = [
     ("#31", "Reserved"),
 ];
 
-/// Load the kernel GDT/TSS/IDT, remap the PICs, start the PIT and enable IRQs.
+/// Load the kernel GDT/TSS/IDT, remap the PICs and start the PIT. The caller
+/// enables interrupts once the task table is ready.
 pub unsafe fn init() {
     let tss = addr_of!(TSS) as u64;
     let ist_top = addr_of!(DOUBLE_FAULT_STACK) as u64 + core::mem::size_of::<Stack>() as u64;
@@ -253,7 +275,6 @@ pub unsafe fn init() {
     crate::outb(0x40, (PIT_DIVISOR >> 8) as u8);
     crate::outb(0x21, !((1 << IRQ_TIMER) | (1 << IRQ_KEYBOARD) | (1 << IRQ_COM1)) as u8);
     crate::outb(0xa1, 0xff);
-    enable();
 }
 
 unsafe fn remap_pics() {
@@ -269,37 +290,58 @@ pub fn ticks() -> u64 {
     TICKS.load(Ordering::Relaxed)
 }
 
+// These are compiler barriers too (no `nomem`): memory accesses guarded by
+// CLI/STI must not be moved across them.
 pub fn enable() {
-    unsafe { asm!("sti", options(nomem, nostack)); }
+    unsafe { asm!("sti", options(nostack)); }
 }
 
 pub fn disable() {
-    unsafe { asm!("cli", options(nomem, nostack)); }
+    unsafe { asm!("cli", options(nostack)); }
 }
 
 /// Enable interrupts and sleep until the next one. STI delays recognition by
 /// one instruction, so an IRQ arriving after a check under CLI still wakes HLT.
 pub fn wait() {
-    unsafe { asm!("sti", "hlt", options(nomem, nostack)); }
+    unsafe { asm!("sti", "hlt", options(nostack)); }
+}
+
+/// Run `f` with interrupts disabled, then restore the previous IF state.
+pub fn without<R>(f: impl FnOnce() -> R) -> R {
+    let flags: u64;
+    unsafe { asm!("pushfq", "pop {}", "cli", out(reg) flags); }
+    let result = f();
+    if flags & 0x200 != 0 {
+        enable();
+    }
+    result
+}
+
+/// Enter the scheduler from task context. The saved RFLAGS keep the
+/// caller's IF, so a caller holding CLI resumes with CLI.
+pub fn yield_now() {
+    unsafe { asm!("int 48"); }
 }
 
 #[no_mangle]
-extern "C" fn tane_interrupt_dispatch(frame: &mut Frame) {
+extern "C" fn tane_interrupt_dispatch(frame: &mut Frame) -> *mut Frame {
     match frame.vector {
         3 => {
             report(frame);
             kprintln!("Breakpoint handled; resuming.");
+            frame
         }
         0..=31 => {
             report(frame);
             kprintln!("HALTED");
             crate::halt();
         }
-        _ => irq(frame.vector - IRQ_BASE),
+        YIELD_VECTOR => crate::tasks::switch(frame, None),
+        vector => irq(frame, vector - IRQ_BASE),
     }
 }
 
-fn irq(irq: u64) {
+fn irq(frame: &mut Frame, irq: u64) -> *mut Frame {
     unsafe {
         // A spurious IRQ 7/15 has no in-service bit and must not receive EOI.
         if irq == 7 || irq == 15 {
@@ -307,15 +349,21 @@ fn irq(irq: u64) {
             crate::outb(command, 0x0b);
             if crate::inb(command) & 0x80 == 0 {
                 if irq == 15 { crate::outb(0x20, 0x20); }
-                return;
+                return frame;
             }
         }
-        if irq == IRQ_TIMER {
-            TICKS.fetch_add(1, Ordering::Relaxed);
-        }
-        // Keyboard and COM1 IRQs only wake HLT; the main loop reads the data.
+        // Acknowledge before a possible switch: the next task may run long.
         if irq >= 8 { crate::outb(0xa0, 0x20); }
         crate::outb(0x20, 0x20);
+    }
+    match irq {
+        IRQ_TIMER => {
+            let now = TICKS.fetch_add(1, Ordering::Relaxed) + 1;
+            crate::tasks::on_timer(frame, now)
+        }
+        // The data stays in the device; the woken shell reads it.
+        IRQ_KEYBOARD | IRQ_COM1 => crate::tasks::on_input(frame),
+        _ => frame,
     }
 }
 
@@ -326,6 +374,8 @@ fn report(frame: &Frame) {
     console.color = 0x0c;
     writeln!(console, "\nCPU EXCEPTION {} {}: {}", vector, mnemonic, name).ok();
     console.color = 0x07;
+    let (pid, task) = crate::tasks::current();
+    writeln!(console, "task: pid {} ({})", pid, task).ok();
     if matches!(vector, 8 | 10..=14 | 17 | 21 | 29 | 30) {
         write!(console, "error=0x{:x}", frame.error).ok();
         if vector == 14 {

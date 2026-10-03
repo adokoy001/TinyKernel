@@ -9,6 +9,7 @@ Unix sockets are preferred; restricted hosts automatically use local pipes.
 import json
 import os
 from pathlib import Path
+import re
 import select
 import socket
 import subprocess
@@ -19,13 +20,17 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "build"
 PROMPT = b"tane> "
+FRAME = 4096
+LOW_MEMORY_END = 1 << 20
+FRAME_LIMIT = 1 << 30
 TIME_LIMIT = 60.0
 
 
 class Machine:
-    def __init__(self, name, deadline, serial=True):
+    def __init__(self, name, deadline, serial=True, memory="64M"):
         self.name = name
         self.with_serial = serial
+        self.memory = memory
         self.deadline = deadline
         self.output = bytearray()
         self.process = None
@@ -80,7 +85,7 @@ class Machine:
         if os.environ.get("QEMU_DATADIR"):
             command += ["-L", os.environ["QEMU_DATADIR"]]
         command += [
-            "-machine", "pc,accel=tcg", "-m", "64M",
+            "-machine", "pc,accel=tcg", "-m", self.memory,
             "-drive", f"file={OUT / 'tane-os.img'},format=raw,if=floppy",
             "-boot", "order=a", "-display", "none", "-net", "none",
         ]
@@ -258,12 +263,61 @@ def fatal_fault(kind, deadline, machines, expected):
     result = machine.wait_for(b"HALTED\r\n", start=start)
     for text in expected:
         contains(result, text)
-    for register in (b"rip=", b"rsp=", b"rax=", b"r15="):
+    for register in (b"task: pid 1 (shell)", b"rip=", b"rsp=", b"rax=", b"r15="):
         contains(result, register)
     machine.drain(0.1)
     if PROMPT in machine.output[start:]:
         raise AssertionError(f"fault {kind} returned to the command loop")
     machine.close()
+
+
+def checked_frames(mem_output):
+    """Recompute the usable frame count from the printed E820 map."""
+    usable = set()
+    reserved = []
+    for base, end, kind in re.findall(rb"^  0x([0-9a-f]+)\.\.0x([0-9a-f]+) +\d+ KiB (.+?)\r$", mem_output, re.M):
+        base, end = int(base, 16), int(end, 16)
+        if kind.endswith(b"(ignored)"):
+            continue
+        if kind == b"usable":
+            start = -(-max(base, LOW_MEMORY_END) // FRAME)
+            usable.update(range(start, min(end, FRAME_LIMIT) // FRAME))
+        else:
+            reserved.append(range(min(base, FRAME_LIMIT) // FRAME, -(-min(end, FRAME_LIMIT) // FRAME)))
+    for frames in reserved:
+        usable.difference_update(frames)
+    match = re.search(rb"Frames: (\d+) usable, (\d+) free, (\d+) in use", mem_output)
+    if not match:
+        raise AssertionError(f"Missing frame summary in {mem_output!r}")
+    if not usable or int(match.group(1)) != len(usable):
+        raise AssertionError(f"Kernel reports {match.group(1)!r} usable frames; E820 map gives {len(usable)}")
+    return [int(value) for value in match.groups()]
+
+
+def frames_free(result):
+    match = re.search(rb"(\d+) frames free", result)
+    if not match:
+        raise AssertionError(f"Missing free frame count in {result!r}")
+    return int(match.group(1))
+
+
+def tasks(machine):
+    """Parse `ps` into {pid: (name, state, cpu_hundredths, counter)}."""
+    table = {}
+    for pid, name, state, seconds, hundredths, counter in re.findall(
+            rb"^ *(\d+) (\w+) +(\w+) +(\d+)\.(\d\d) +(\d+|-)  0x[0-9a-f]+ \(", machine.command(b"ps\r"), re.M):
+        table[int(pid)] = (name, state, int(seconds) * 100 + int(hundredths), None if counter == b"-" else int(counter))
+    if table.get(1, (None,))[:2] != (b"shell", b"running") or table.get(0, (None,))[0] != b"idle":
+        raise AssertionError(f"Unexpected task table {table!r}")
+    return table
+
+
+def spawn(machine, kind):
+    result = machine.command(f"spawn {kind}\r".encode("ascii"))
+    match = re.search(rb"started " + kind.encode("ascii") + rb" as pid (\d+)", result)
+    if not match:
+        raise AssertionError(f"spawn {kind} failed: {result!r}")
+    return int(match.group(1))
 
 
 def contains(result, expected):
@@ -298,7 +352,7 @@ def main():
         contains(machine.command(b"help\r"), b"calc A OP B")
         contains(machine.command(b"about\r"), b"CPU exceptions print registers; no process isolation, filesystem, or network.")
         result = machine.command(b"mem\r")
-        contains(result, b"First 1 GiB identity mapped; this is NOT detected RAM size.")
+        contains(result, b"First 1 GiB identity mapped with 2 MiB pages.")
         contains(result, b"Command buffer: 128 bytes (max 127 input).")
         checked("help/about/mem describe the running kernel")
 
@@ -354,6 +408,75 @@ def main():
         contains(machine.command(b"fault nmi\r"), b"error: usage: fault bp|de|ud|gp|pf|df")
         checked("#BP is reported and execution resumes")
 
+        usable, free, used = checked_frames(machine.command(b"mem\r"))
+        if usable < 15000 or free != usable or used != 0:
+            raise AssertionError(f"Unexpected frame summary for 64 MiB: {usable} {free} {used}")
+        contains(machine.output, f"| {usable} free 4 KiB frames".encode("ascii"))
+        first, second = machine.command(b"alloc\r"), machine.command(b"alloc\r")
+        a, b = (int(re.search(rb"allocated 0x([0-9a-f]+) \(zeroed\)", r).group(1), 16) for r in (first, second))
+        if a == b or a % FRAME or b % FRAME or min(a, b) < LOW_MEMORY_END or frames_free(second) != usable - 2:
+            raise AssertionError(f"Bad allocations 0x{a:x}, 0x{b:x}: {second!r}")
+        contains(machine.command(f"free 0x{a:x}\r".encode("ascii")), f"freed 0x{a:x}; {usable - 1} frames free".encode("ascii"))
+        contains(machine.command(f"free 0x{a:x}\r".encode("ascii")), b"frame is already free")
+        contains(machine.command(b"free 0x1000\r"), b"error: 0x1000: not a managed RAM frame")
+        contains(machine.command(f"free {b + 1}\r".encode("ascii")), b"address is not 4 KiB aligned")
+        contains(machine.command(b"free 0x\r"), b"error: usage: free ADDR (0x hex or decimal)")
+        contains(machine.command(f"free {b}\r".encode("ascii")), f"; {usable} frames free".encode("ascii"))
+        checked("E820 RAM becomes 4 KiB frames; alloc/free validate addresses")
+
+        spins = [spawn(machine, "spin"), spawn(machine, "spin")]
+        beat = spawn(machine, "beat")
+        before = tasks(machine)
+        contains(machine.keyboard(["e", "c", "h", "o", "spc", "b", "u", "s", "y", "ret"]), b"\r\nbusy\r\n")
+        began = time.monotonic()
+        contains(machine.command(b"echo responsive\r"), b"\r\nresponsive\r\n")
+        if time.monotonic() - began > 1.5:
+            raise AssertionError("Shell input stalled while CPU-bound tasks ran")
+        machine.command(b"sleep 500\r")
+        after = tasks(machine)
+        for pid in spins:
+            if after[pid][2] <= before[pid][2] or after[pid][3] <= before[pid][3]:
+                raise AssertionError(f"spin pid {pid} did not keep running: {before[pid]} -> {after[pid]}")
+        if after[beat][3] - before[beat][3] < 3 or after[beat][1] != b"sleeping" or after[beat][2] > 5:
+            raise AssertionError(f"beat should sleep between beats: {before[beat]} -> {after[beat]}")
+        checked("timer preempts CPU-bound tasks; shell and sleepers stay responsive")
+
+        stack = int(re.search(rb"^ *" + str(spins[0]).encode("ascii") + rb" spin .*  0x([0-9a-f]+) \(4 frames\)",
+                              machine.command(b"ps\r"), re.M).group(1), 16)
+        contains(machine.command(f"free 0x{stack + 2 * FRAME:x}\r".encode("ascii")),
+                 f"is in the stack of pid {spins[0]}; use kill".encode("ascii"))
+        busy = checked_frames(machine.command(b"mem\r"))[1]
+        if busy != usable - 12:
+            raise AssertionError(f"Three 16 KiB task stacks should use 12 frames; {usable - busy} in use")
+        once = spawn(machine, "once")
+        # It may not have run yet while the two spin tasks share the CPU.
+        if tasks(machine)[once][:2] not in ((b"once", b"ready"), (b"once", b"sleeping")):
+            raise AssertionError("once task was not created")
+        machine.command(b"sleep 600\r")
+        if once in tasks(machine):
+            raise AssertionError("Exited task was not reaped")
+        if checked_frames(machine.command(b"mem\r"))[1] != busy:
+            raise AssertionError("Exited task did not return its stack frames")
+        contains(machine.command(b"kill 1\r"), b"error: cannot kill the shell or the idle task")
+        contains(machine.command(b"kill 0\r"), b"error: cannot kill the shell or the idle task")
+        contains(machine.command(b"kill 9999\r"), b"error: no such task")
+        contains(machine.command(b"spawn idle\r"), b"error: usage: spawn spin|beat|once")
+        extra = []
+        while True:
+            result = machine.command(b"spawn beat\r")
+            if b"error: task table is full (8 tasks)" in result:
+                break
+            extra.append(int(re.search(rb"as pid (\d+)", result).group(1)))
+            if len(extra) > 8:
+                raise AssertionError("Task table never filled")
+        if len(tasks(machine)) != 8:
+            raise AssertionError("Task table should hold exactly 8 tasks")
+        for pid in spins + [beat] + extra:
+            contains(machine.command(f"kill {pid}\r".encode("ascii")), f"killed pid {pid} (".encode("ascii"))
+        if set(tasks(machine)) != {0, 1} or checked_frames(machine.command(b"mem\r"))[1:] != [usable, 0]:
+            raise AssertionError("Killing every task did not restore the frame pool")
+        checked("exited and killed tasks return stacks; table limit and kill errors")
+
         result = machine.command(b"echo " + b"X" * 160 + b"\r")
         contains(result, b"\r\n" + b"X" * 122 + b"\r\n")
         if b"X" * 123 in result:
@@ -372,13 +495,16 @@ def main():
 
         contains(machine.command(b"clear\r"), b"\x1b[2J\x1b[H")
         machine.command(b"about\r")
-        machine.command(b"help\r")
-        machine.command(b"echo Rust kernel / BIOS + serial + PS2 verified\r")
+        shown = [spawn(machine, "spin"), spawn(machine, "beat")]
+        machine.command(b"sleep 300\r")
+        machine.command(b"ps\r")
         machine.command(b"calc 12 * 3\r")
         screenshot = OUT / "tane-os.ppm"
         machine.monitor("screendump", {"filename": str(screenshot)})
         if not screenshot.is_file() or screenshot.stat().st_size < 1000:
             raise AssertionError("QEMU did not capture the VGA screenshot")
+        for pid in shown:
+            machine.command(f"kill {pid}\r".encode("ascii"))
         checked("clear works and VGA screenshot is captured")
 
         start = len(machine.output)
@@ -393,7 +519,7 @@ def main():
         checked("halt stops the guest CPU while QEMU stays alive")
         machine.close()
 
-        reboot = Machine("reboot", deadline)
+        reboot = Machine("reboot", deadline, memory="128M")
         machines.append(reboot)
         reboot.start()
         start = len(reboot.output)
@@ -405,6 +531,10 @@ def main():
             raise AssertionError("Reboot did not produce exactly a second boot banner")
         contains(reboot.command(b"echo restarted\r"), b"\r\nrestarted\r\n")
         checked("8042 reboot boots again and accepts a fresh command")
+        larger = checked_frames(reboot.command(b"mem\r"))[0]
+        if larger - usable < 16000:
+            raise AssertionError(f"128 MiB gives {larger} frames, 64 MiB gave {usable}")
+        checked("E820 detects the RAM size (64 MiB vs 128 MiB)")
         reboot.close()
 
         fatal_fault("de", deadline, machines, [b"CPU EXCEPTION 0 #DE: Divide error"])

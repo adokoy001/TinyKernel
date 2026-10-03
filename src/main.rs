@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 
-// Tane OS: an original, single-task kernel. No allocator and no external crates.
+// Tane OS: an original, small preemptive kernel. No heap and no external crates.
 
 // Each print borrows the global console only for the duration of one line.
 macro_rules! kprintln {
@@ -11,14 +11,18 @@ macro_rules! kprintln {
     }};
 }
 
+mod frames;
 mod interrupts;
+mod sched;
 mod shell;
+mod tasks;
 
 use core::arch::asm;
 use core::fmt::{self, Write};
 use core::panic::PanicInfo;
 use core::ptr::{addr_of, addr_of_mut, read_volatile, write_volatile};
 use core::sync::atomic::{AtomicBool, Ordering};
+use frames::{E820Entry, FrameAllocator, FRAME_SIZE};
 use shell::{Action, Fault};
 
 const VGA: *mut u16 = 0xb8000 as *mut u16;
@@ -26,13 +30,38 @@ const WIDTH: usize = 80;
 const HEIGHT: usize = 25;
 const SERIAL: u16 = 0x3f8;
 const LINE_SIZE: usize = 128;
+/// The boot sector stores the BIOS E820 map here (see boot.S).
+const E820_COUNT: *const u16 = 0x5000 as *const u16;
+const E820_ENTRIES: *const E820Entry = 0x5010 as *const E820Entry;
+const E820_MAX: usize = 64;
+/// Frames below 1 MiB hold the kernel, its stack, BIOS data and the VGA
+/// buffer; the allocator only hands out RAM from here up to 1 GiB, the
+/// identity-mapped limit.
+const LOW_MEMORY_END: u64 = 0x100000;
+const FRAME_WORDS: usize = 4096;
+type Frames = FrameAllocator<FRAME_WORDS>;
+
+static mut FRAMES: Frames = Frames::new();
 
 static mut CONSOLE: Console = Console { x: 0, y: 0, color: 0x07 };
 static SERIAL_PRESENT: AtomicBool = AtomicBool::new(false);
 
 fn console() -> &'static mut Console {
-    // Single CPU. Only exception reports print from interrupt context.
+    // Single CPU. Tasks other than the shell never print; only exception
+    // reports print from interrupt context.
     unsafe { &mut *addr_of_mut!(CONSOLE) }
+}
+
+/// The frame allocator is shared with the scheduler, so use it under CLI.
+fn with_frames<R>(f: impl FnOnce(&mut Frames) -> R) -> R {
+    interrupts::without(|| f(unsafe { &mut *addr_of_mut!(FRAMES) }))
+}
+
+fn e820_map() -> &'static [E820Entry] {
+    unsafe {
+        let count = (read_volatile(E820_COUNT) as usize).min(E820_MAX);
+        core::slice::from_raw_parts(E820_ENTRIES, count)
+    }
 }
 
 extern "C" {
@@ -64,8 +93,18 @@ pub extern "C" fn _start() -> ! {
     console().color = 0x07;
     kprintln!("Self-made BIOS loader + Rust kernel. External crates: 0.");
     kprintln!("64-bit mode | VGA + COM1 | PS/2 keyboard | no heap");
-    unsafe { interrupts::init(); }
+    let map = e820_map();
+    with_frames(|frames| frames.init(map, LOW_MEMORY_END));
+    let usable = with_frames(|frames| frames.usable_frames());
+    kprintln!("RAM: {} E820 entries | {} free 4 KiB frames ({} KiB) above 1 MiB",
+        map.len(), usable, usable as u64 * FRAME_SIZE / 1024);
+    unsafe {
+        interrupts::init();
+        tasks::init();
+    }
+    interrupts::enable();
     kprintln!("IDT: 32 exception handlers, #DF on IST1 | PIT timer {} Hz", interrupts::TIMER_HZ);
+    kprintln!("Tasks: preemptive round robin, up to {} tasks", tasks::MAX_TASKS);
     if !SERIAL_PRESENT.load(Ordering::Relaxed) {
         kprintln!("COM1 not detected; VGA and keyboard only.");
     }
@@ -110,12 +149,8 @@ pub extern "C" fn _start() -> ! {
                 _ => {} // Ignore controls and safely discard excess input.
             }
         } else {
-            // Re-check after any interrupt: timer, keyboard, or COM1 data.
-            interrupts::disable();
-            if !unsafe { serial_ready() } && !keyboard.ready() {
-                interrupts::wait();
-            }
-            interrupts::enable();
+            // Block the shell task; other tasks or idle run until input.
+            tasks::wait_for_input(|| unsafe { serial_ready() } || keyboard.ready());
         }
     }
 }
@@ -131,32 +166,47 @@ fn execute(line: &str) {
         Action::Help => {
             kprintln!("help          Show commands");
             kprintln!("about         Describe this kernel");
-            kprintln!("mem           Show the fixed memory layout");
+            kprintln!("mem           Show the memory layout, E820 map and frames");
+            kprintln!("alloc         Take one zeroed 4 KiB physical frame");
+            kprintln!("free ADDR     Return a frame (example: free 0x100000)");
+            kprintln!("ps            List tasks");
+            kprintln!("spawn KIND    Start a task: spin (CPU), beat (sleeps), once (exits)");
+            kprintln!("kill PID      Stop a task and free its stack frames");
             kprintln!("uptime        Time since boot, counted by timer interrupts");
             kprintln!("echo TEXT     Print text");
             kprintln!("calc A OP B   Integer + - * / (example: calc 12 * 3)");
-            kprintln!("sleep MS      Wait MS milliseconds (0-60000) with HLT");
+            kprintln!("sleep MS      Block the shell for MS milliseconds (0-60000)");
             kprintln!("fault KIND    Raise a CPU exception: bp de ud gp pf df");
             kprintln!("clear         Clear the screen");
             kprintln!("reboot        Restart the virtual machine");
             kprintln!("halt          Stop the CPU (close QEMU to exit)");
         }
         Action::About => {
-            kprintln!("Tane OS 0.2 - a small original Rust kernel.");
+            kprintln!("Tane OS 0.3 - a small original Rust kernel.");
             kprintln!("No Linux code, GRUB, external crates, libc, or host OS calls.");
             kprintln!("Firmware loads our 512-byte boot sector; it loads this kernel.");
-            kprintln!("One task, ring 0, fixed memory, own GDT/TSS/IDT, PIT at {} Hz.", interrupts::TIMER_HZ);
+            kprintln!("Ring 0, own GDT/TSS/IDT, PIT at {} Hz, E820 RAM in 4 KiB frames.", interrupts::TIMER_HZ);
+            kprintln!("Preemptive round-robin kernel tasks with stacks from the frame allocator.");
             kprintln!("CPU exceptions print registers; no process isolation, filesystem, or network.");
         }
         Action::Memory => {
             let end = addr_of!(__kernel_end) as usize;
             kprintln!("Page tables: 0x1000..0x4000");
+            kprintln!("E820 table:  0x5000..0x5610 (written by the boot sector)");
             kprintln!("Boot sector: 0x7c00..0x7e00");
             kprintln!("Kernel:      0x10000..0x{:x} ({} bytes incl. BSS)", end, end - 0x10000);
-            kprintln!("Stack range: 0x80000..0x90000 (grows down)");
+            kprintln!("Shell stack: 0x80000..0x90000 (grows down)");
             kprintln!("VGA text:    0xb8000");
-            kprintln!("First 1 GiB identity mapped; this is NOT detected RAM size.");
+            kprintln!("First 1 GiB identity mapped with 2 MiB pages.");
             kprintln!("No heap. Command buffer: {} bytes (max {} input).", LINE_SIZE, LINE_SIZE - 1);
+            let map = e820_map();
+            kprintln!("BIOS E820 map ({} entries):", map.len());
+            for entry in map {
+                kprintln!("  0x{:010x}..0x{:010x} {:>9} KiB {}{}", entry.base, entry.end(), entry.length / 1024,
+                    entry.kind_name(), if entry.ignored() { " (ignored)" } else { "" });
+            }
+            let (usable, free) = with_frames(|frames| (frames.usable_frames(), frames.free_frames()));
+            kprintln!("Frames: {} usable, {} free, {} in use (4 KiB each, 1 MiB..1 GiB)", usable, free, usable - free);
         }
         Action::Uptime => {
             let ticks = interrupts::ticks();
@@ -165,15 +215,60 @@ fn execute(line: &str) {
         }
         Action::Echo(text) => kprintln!("{}", text),
         Action::Calc(Ok(result)) => kprintln!("= {}", result),
-        Action::Calc(Err(error)) | Action::Sleep(Err(error)) | Action::Fault(Err(error)) => kprintln!("error: {}", error),
+        Action::Calc(Err(error)) | Action::Sleep(Err(error)) | Action::Fault(Err(error))
+        | Action::Free(Err(error)) | Action::Spawn(Err(error)) | Action::Kill(Err(error)) => kprintln!("error: {}", error),
         Action::Sleep(Ok(ms)) => {
             // Round up so the wait is never shorter than requested.
-            let target = interrupts::ticks() + (ms * interrupts::TIMER_HZ).div_ceil(1000);
-            while interrupts::ticks() < target {
-                interrupts::wait();
-            }
+            tasks::sleep_until(interrupts::ticks() + (ms * interrupts::TIMER_HZ).div_ceil(1000));
             kprintln!("slept {} ms", ms);
         }
+        Action::Alloc => match with_frames(|frames| frames.allocate()) {
+            Some(address) => {
+                // Identity mapping: the physical address is directly writable.
+                for offset in (0..FRAME_SIZE).step_by(8) {
+                    unsafe { write_volatile((address + offset) as *mut u64, 0); }
+                }
+                kprintln!("allocated 0x{:x} (zeroed); {} frames free", address, with_frames(|frames| frames.free_frames()));
+            }
+            None => kprintln!("error: no free physical frames"),
+        },
+        Action::Free(Ok(address)) => {
+            // Task stacks come from the same pool; only `kill` returns them.
+            let (owner, result) = with_frames(|frames| match tasks::stack_owner(address) {
+                Some(pid) => (Some(pid), Ok(0)),
+                None => (None, frames.free(address).map(|()| frames.free_frames())),
+            });
+            match (owner, result) {
+                (Some(pid), _) => kprintln!("error: 0x{:x} is in the stack of pid {}; use kill", address, pid),
+                (None, Ok(free)) => kprintln!("freed 0x{:x}; {} frames free", address, free),
+                (None, Err(error)) => kprintln!("error: 0x{:x}: {}", address, error.message()),
+            }
+        }
+        Action::Tasks => {
+            kprintln!("PID NAME   STATE       CPU s     COUNTER  STACK");
+            tasks::list(|task| {
+                let hundredths = task.cpu_ticks * 100 / interrupts::TIMER_HZ;
+                write!(console(), "{:>3} {:<6} {:<8} {:>5}.{:02} ", task.pid, task.name, task.state,
+                    hundredths / 100, hundredths % 100).ok();
+                match task.counter {
+                    Some(counter) => write!(console(), "{:>11}", counter).ok(),
+                    None => write!(console(), "{:>11}", "-").ok(),
+                };
+                if task.owns_stack {
+                    kprintln!("  0x{:x} ({} frames)", task.stack, tasks::STACK_FRAMES);
+                } else {
+                    kprintln!("  0x{:x} (kernel)", task.stack);
+                }
+            });
+        }
+        Action::Spawn(Ok(kind)) => match tasks::spawn(kind) {
+            Ok(pid) => kprintln!("started {} as pid {}", kind.name(), pid),
+            Err(error) => kprintln!("error: {}", error),
+        },
+        Action::Kill(Ok(pid)) => match tasks::kill(pid) {
+            Ok(name) => kprintln!("killed pid {} ({}); {} frames free", pid, name, with_frames(|frames| frames.free_frames())),
+            Err(error) => kprintln!("error: {}", error),
+        },
         Action::Fault(Ok(fault)) => raise(fault),
         Action::Clear => {
             console().clear();
@@ -380,7 +475,7 @@ unsafe fn serial_init() {
     outb(SERIAL + 3, 0x80); // Access baud divisor.
     outb(SERIAL, 0x01); outb(SERIAL + 1, 0x00); // 115200 baud.
     outb(SERIAL + 3, 0x03); // 8 data bits, no parity, one stop bit.
-    outb(SERIAL + 2, 0xc7); // FIFO enable/reset.
+    outb(SERIAL + 2, 0x07); // FIFO enable/reset; IRQ at every received byte.
     outb(SERIAL + 4, 0x0b); // DTR + RTS + OUT2, which gates IRQ 4 on PCs.
     outb(SERIAL + 1, 0x01); // IRQ on received data, so HLT wakes for input.
 }

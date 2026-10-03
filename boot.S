@@ -72,6 +72,33 @@ next_sector:
     dec si
     jnz read_sector
 
+    /* BIOS INT 15h E820 memory map: entry count (u16) at 0x5000 and up to
+     * 64 entries of 24 bytes from 0x5010. A 20-byte reply keeps the preset
+     * ACPI 3.0 attribute "valid". The kernel reads this table later. */
+    xor ax, ax
+    mov es, ax
+    mov word ptr [0x5000], ax
+    mov di, 0x5010
+    xor ebx, ebx
+e820_next:
+    mov dword ptr [di + 20], 1
+    mov eax, 0xe820
+    mov ecx, 24
+    mov edx, 0x534d4150       /* "SMAP" */
+    int 0x15
+    jc e820_done              /* unsupported, or the end on some BIOSes */
+    cmp eax, 0x534d4150
+    jne e820_done
+    jcxz e820_skip
+    add di, 24
+    inc word ptr [0x5000]
+    cmp word ptr [0x5000], 64
+    jae e820_done
+e820_skip:
+    test ebx, ebx
+    jnz e820_next
+e820_done:
+
     cli
     /* Fast A20 gate: enable A20 and keep the fast-reset bit clear. */
     in al, 0x92

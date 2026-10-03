@@ -1,5 +1,5 @@
 Tane OS QEMU integration test
-Elapsed: 7.12s
+Elapsed: 10.14s
 Transport (main): local pipes (Unix sockets unavailable or disabled)
 Transport (reboot): local pipes (Unix sockets unavailable or disabled)
 Transport (fault-de): local pipes (Unix sockets unavailable or disabled)
@@ -15,12 +15,16 @@ PASS: arithmetic handles signed limits, overflow and zero division
 PASS: unknown/empty commands, both backspaces and CRLF work
 PASS: PIT timer interrupts drive uptime and sleep
 PASS: #BP is reported and execution resumes
+PASS: E820 RAM becomes 4 KiB frames; alloc/free validate addresses
+PASS: timer preempts CPU-bound tasks; shell and sleepers stay responsive
+PASS: exited and killed tasks return stacks; table limit and kill errors
 PASS: overlong input is bounded and the next command recovers
 PASS: VGA scrolling keeps the shell responsive
 PASS: PS/2 keyboard path works, including Shift letters and symbols
 PASS: clear works and VGA screenshot is captured
 PASS: halt stops the guest CPU while QEMU stays alive
 PASS: 8042 reboot boots again and accepts a fresh command
+PASS: E820 detects the RAM size (64 MiB vs 128 MiB)
 PASS: #DE/#UD/#GP/#PF print diagnostics and halt
 PASS: #DF runs on its IST stack after an unmapped RSP
 PASS: keyboard works when the machine has no COM1 (run.sh default)

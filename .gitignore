@@ -6,3 +6,5 @@ build/boot.elf
 build/shell-tests
 build/*.stderr
 build/*.ppm
+build/frames-tests
+build/sched-tests

@@ -9,10 +9,15 @@ pub enum Action<'a> {
     Halt,
     Reboot,
     Uptime,
+    Alloc,
+    Tasks,
     Echo(&'a str),
     Calc(Result<i64, &'static str>),
     Sleep(Result<u64, &'static str>),
     Fault(Result<Fault, &'static str>),
+    Free(Result<u64, &'static str>),
+    Spawn(Result<TaskKind, &'static str>),
+    Kill(Result<u32, &'static str>),
     Empty,
     Unknown,
 }
@@ -28,9 +33,33 @@ pub enum Fault {
     DoubleFault,
 }
 
+/// Demonstration tasks that `spawn` can start.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum TaskKind {
+    /// CPU-bound loop; only the timer interrupt takes the CPU away.
+    Spin,
+    /// Sleeps 100 ms per beat, blocking instead of using the CPU.
+    Beat,
+    /// Sleeps 300 ms once, then exits so its stack frames are reclaimed.
+    Once,
+}
+
+impl TaskKind {
+    pub fn name(self) -> &'static str {
+        match self {
+            TaskKind::Spin => "spin",
+            TaskKind::Beat => "beat",
+            TaskKind::Once => "once",
+        }
+    }
+}
+
 pub const MAX_SLEEP_MS: u64 = 60_000;
 const FAULT_USAGE: &str = "usage: fault bp|de|ud|gp|pf|df";
 const SLEEP_USAGE: &str = "usage: sleep MS (0-60000)";
+const FREE_USAGE: &str = "usage: free ADDR (0x hex or decimal)";
+const SPAWN_USAGE: &str = "usage: spawn spin|beat|once";
+const KILL_USAGE: &str = "usage: kill PID";
 
 /// Trim the command line's outer ASCII whitespace. `echo` consumes one
 /// separator after its name, preserving all remaining spaces inside the line.
@@ -51,11 +80,16 @@ pub fn parse(line: &str) -> Action<'_> {
         "calc" => Action::Calc(calculate(text)),
         "sleep" => Action::Sleep(sleep(text)),
         "fault" => Action::Fault(fault(text)),
+        "free" => Action::Free(address(text)),
+        "spawn" => Action::Spawn(spawn(text)),
+        "kill" => Action::Kill(text.trim_ascii().parse::<u32>().ok().filter(|_| digits(text)).ok_or(KILL_USAGE)),
         _ if !text.is_empty() => Action::Unknown,
         "help" => Action::Help,
         "about" => Action::About,
         "mem" => Action::Memory,
         "uptime" => Action::Uptime,
+        "alloc" => Action::Alloc,
+        "ps" => Action::Tasks,
         "clear" => Action::Clear,
         "halt" => Action::Halt,
         "reboot" => Action::Reboot,
@@ -63,10 +97,34 @@ pub fn parse(line: &str) -> Action<'_> {
     }
 }
 
+/// Rust's integer parsing accepts a leading `+`; commands take digits only.
+fn digits(text: &str) -> bool {
+    text.trim_ascii().bytes().all(|b| b.is_ascii_digit())
+}
+
 fn sleep(text: &str) -> Result<u64, &'static str> {
     match text.trim_ascii().parse::<u64>() {
-        Ok(ms) if ms <= MAX_SLEEP_MS && text.trim_ascii().bytes().all(|b| b.is_ascii_digit()) => Ok(ms),
+        Ok(ms) if ms <= MAX_SLEEP_MS && digits(text) => Ok(ms),
         _ => Err(SLEEP_USAGE),
+    }
+}
+
+fn address(text: &str) -> Result<u64, &'static str> {
+    let text = text.trim_ascii();
+    let parsed = match text.strip_prefix("0x") {
+        Some(hex) if !hex.is_empty() && hex.bytes().all(|b| b.is_ascii_hexdigit()) => u64::from_str_radix(hex, 16),
+        None if digits(text) => text.parse::<u64>(),
+        _ => return Err(FREE_USAGE),
+    };
+    parsed.map_err(|_| FREE_USAGE)
+}
+
+fn spawn(text: &str) -> Result<TaskKind, &'static str> {
+    match text.trim_ascii() {
+        "spin" => Ok(TaskKind::Spin),
+        "beat" => Ok(TaskKind::Beat),
+        "once" => Ok(TaskKind::Once),
+        _ => Err(SPAWN_USAGE),
     }
 }
 
@@ -106,7 +164,7 @@ fn calculate(text: &str) -> Result<i64, &'static str> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse, Action, Fault};
+    use super::{parse, Action, Fault, TaskKind};
 
     #[test]
     fn exact_commands_and_outer_whitespace() {
@@ -118,6 +176,8 @@ mod tests {
             ("halt", Action::Halt),
             ("reboot", Action::Reboot),
             ("uptime", Action::Uptime),
+            ("alloc", Action::Alloc),
+            ("ps", Action::Tasks),
         ] {
             assert_eq!(parse(line), expected);
         }
@@ -130,6 +190,8 @@ mod tests {
         assert_eq!(parse("HELP"), Action::Unknown);
         assert_eq!(parse("mem extra"), Action::Unknown);
         assert_eq!(parse("uptime now"), Action::Unknown);
+        assert_eq!(parse("alloc 2"), Action::Unknown);
+        assert_eq!(parse("ps -a"), Action::Unknown);
         assert_eq!(parse("echoes"), Action::Unknown);
         assert_eq!(parse("\u{2003}"), Action::Unknown);
     }
@@ -205,5 +267,32 @@ mod tests {
         for line in ["fault", "fault PF", "fault pf gp", "fault nmi"] {
             assert_eq!(parse(line), Action::Fault(Err("usage: fault bp|de|ud|gp|pf|df")));
         }
+    }
+
+    #[test]
+    fn free_takes_one_hex_or_decimal_address() {
+        assert_eq!(parse("free 0x100000"), Action::Free(Ok(0x100000)));
+        assert_eq!(parse("free 0xABCdef"), Action::Free(Ok(0xabcdef)));
+        assert_eq!(parse("free 4096"), Action::Free(Ok(4096)));
+        assert_eq!(parse("free 0xffffffffffffffff"), Action::Free(Ok(u64::MAX)));
+        for line in ["free", "free 0x", "free 0x1g", "free +4096", "free -1", "free 1 2",
+                     "free 0x10000000000000000", "free 18446744073709551616", "free 0X10"] {
+            assert_eq!(parse(line), Action::Free(Err("usage: free ADDR (0x hex or decimal)")), "{line}");
+        }
+    }
+
+    #[test]
+    fn spawn_and_kill_arguments() {
+        assert_eq!(parse("spawn spin"), Action::Spawn(Ok(TaskKind::Spin)));
+        assert_eq!(parse("spawn beat"), Action::Spawn(Ok(TaskKind::Beat)));
+        assert_eq!(parse("spawn  once "), Action::Spawn(Ok(TaskKind::Once)));
+        for line in ["spawn", "spawn idle", "spawn spin beat"] {
+            assert_eq!(parse(line), Action::Spawn(Err("usage: spawn spin|beat|once")));
+        }
+        assert_eq!(parse("kill 7"), Action::Kill(Ok(7)));
+        for line in ["kill", "kill +7", "kill -1", "kill x", "kill 4294967296", "kill 1 2"] {
+            assert_eq!(parse(line), Action::Kill(Err("usage: kill PID")), "{line}");
+        }
+        assert_eq!(TaskKind::Beat.name(), "beat");
     }
 }
