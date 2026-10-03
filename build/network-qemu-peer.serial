@@ -1,0 +1,212 @@
+TANE OS / RUST BARE METAL
+Self-made BIOS loader + Rust kernel. External crates: 0.
+64-bit mode | VGA + COM1 | PS/2 keyboard | no heap
+RAM: 7 E820 entries | 16096 free 4 KiB frames (64384 KiB) above 1 MiB
+IDT: 32 exception handlers, #DF on IST1 | PIT timer 100 Hz
+Tasks: preemptive round robin, up to 8 tasks
+Protection: NX data | kernel text read-only | null page unmapped | CR0.WP
+MAC: enforcing compiled-in policy | shell domain admin (drop lowers it)
+Disk: none (attach an IDE disk for TaneFS)
+Network: RTL8139 MAC 52:54:00:12:34:56 | static IPv4 + IPv6
+Type help. English keyboard / ASCII input.
+READY
+tane> net
+RTL8139 I/O 0xc000 MAC 52:54:00:12:34:56
+IPv4 10.0.2.15 mask 255.255.255.0 gateway 10.0.2.2
+IPv6 fd00::15/64 gateway fd00::2
+RX 0 TX 0 dropped 0 | 0 cached neighbors
+Polling, MTU 1500, static addresses; 10 ms timer resolution
+tane> net ping 10.0.2.2 --count 3 --timeout 500
+reply from 10.0.2.2: seq=1 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=2 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=3 bytes=16 ttl=64 time=10 ms
+3 sent, 3 received
+tane> ping fd00::2 --count 2 --timeout 500
+reply from fd00::2: seq=1 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=2 bytes=16 ttl=64 time=10 ms
+2 sent, 2 received
+tane> ping 10.0.2.2 --count 1 --timeout 500
+reply from 10.0.2.2: seq=1 bytes=16 ttl=64 time=10 ms
+1 sent, 1 received
+tane> ping fd00::2 --count 1 --timeout 500
+reply from fd00::2: seq=1 bytes=16 ttl=64 time=10 ms
+1 sent, 1 received
+tane> ping 10.0.2.2 --count 10 --timeout 500
+reply from 10.0.2.2: seq=1 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=2 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=3 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=4 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=5 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=6 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=7 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=8 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=9 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=10 bytes=16 ttl=64 time=10 ms
+10 sent, 10 received
+tane> ping fd00::2 --count 10 --timeout 500
+reply from fd00::2: seq=1 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=2 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=3 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=4 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=5 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=6 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=7 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=8 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=9 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=10 bytes=16 ttl=64 time=10 ms
+10 sent, 10 received
+tane> ping 10.0.2.2 --count 10 --timeout 500
+reply from 10.0.2.2: seq=1 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=2 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=3 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=4 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=5 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=6 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=7 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=8 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=9 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=10 bytes=16 ttl=64 time=10 ms
+10 sent, 10 received
+tane> ping fd00::2 --count 10 --timeout 500
+reply from fd00::2: seq=1 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=2 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=3 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=4 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=5 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=6 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=7 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=8 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=9 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=10 bytes=16 ttl=64 time=10 ms
+10 sent, 10 received
+tane> ping 10.0.2.2 --count 10 --timeout 500
+reply from 10.0.2.2: seq=1 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=2 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=3 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=4 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=5 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=6 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=7 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=8 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=9 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=10 bytes=16 ttl=64 time=10 ms
+10 sent, 10 received
+tane> ping fd00::2 --count 10 --timeout 500
+reply from fd00::2: seq=1 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=2 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=3 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=4 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=5 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=6 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=7 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=8 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=9 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=10 bytes=16 ttl=64 time=0 ms
+10 sent, 10 received
+tane> ping 10.0.2.2 --count 10 --timeout 500
+reply from 10.0.2.2: seq=1 bytes=16 ttl=64 time=0 ms
+reply from 10.0.2.2: seq=2 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=3 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=4 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=5 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=6 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=7 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=8 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=9 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=10 bytes=16 ttl=64 time=10 ms
+10 sent, 10 received
+tane> ping fd00::2 --count 10 --timeout 500
+reply from fd00::2: seq=1 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=2 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=3 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=4 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=5 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=6 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=7 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=8 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=9 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=10 bytes=16 ttl=64 time=10 ms
+10 sent, 10 received
+tane> ping 10.0.2.2 --count 10 --timeout 500
+reply from 10.0.2.2: seq=1 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=2 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=3 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=4 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=5 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=6 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=7 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=8 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=9 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=10 bytes=16 ttl=64 time=10 ms
+10 sent, 10 received
+tane> ping fd00::2 --count 10 --timeout 500
+reply from fd00::2: seq=1 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=2 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=3 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=4 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=5 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=6 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=7 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=8 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=9 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=10 bytes=16 ttl=64 time=10 ms
+10 sent, 10 received
+tane> ping 10.0.2.2 --count 10 --timeout 500
+reply from 10.0.2.2: seq=1 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=2 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=3 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=4 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=5 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=6 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=7 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=8 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=9 bytes=16 ttl=64 time=10 ms
+reply from 10.0.2.2: seq=10 bytes=16 ttl=64 time=10 ms
+10 sent, 10 received
+tane> ping fd00::2 --count 10 --timeout 500
+reply from fd00::2: seq=1 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=2 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=3 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=4 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=5 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=6 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=7 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=8 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=9 bytes=16 ttl=64 time=10 ms
+reply from fd00::2: seq=10 bytes=16 ttl=64 time=10 ms
+10 sent, 10 received
+tane> ping 10.0.2.2 --count 1 --timeout 100
+timeout: seq=1
+1 sent, 0 received
+tane> ping fd00::2 --count 1 --timeout 100
+timeout: seq=1
+1 sent, 0 received
+tane> ping 10.0.2.2 --count 1 --timeout 100
+timeout: seq=1
+1 sent, 0 received
+tane> ping fd00::2 --count 1 --timeout 100
+timeout: seq=1
+1 sent, 0 received
+tane> ping 10.0.2.2 --count 2 --timeout 100
+timeout: seq=1
+timeout: seq=2
+2 sent, 0 received
+tane> ping 10.0.2.2 --count 10 --timeout 1000
+cancelled
+0 sent, 0 received
+tane> ping 10.0.2.2 --count 1 --timeout 500
+reply from 10.0.2.2: seq=1 bytes=16 ttl=64 time=10 ms
+1 sent, 1 received
+tane> drop
+domain admin -> user; this cannot be undone until reboot
+tane$ net
+RTL8139 I/O 0xc000 MAC 52:54:00:12:34:56
+IPv4 10.0.2.15 mask 255.255.255.0 gateway 10.0.2.2
+IPv6 fd00::15/64 gateway fd00::2
+RX 143 TX 140 dropped 7 | 2 cached neighbors
+Polling, MTU 1500, static addresses; 10 ms timer resolution
+tane$ ping 10.0.2.99 --count 1 --timeout 100
+denied: user may not net-ping (MAC policy; audited)
+tane$ ping fd00::99 --count 1 --timeout 100
+denied: user may not net-ping (MAC policy; audited)
+tane$ 

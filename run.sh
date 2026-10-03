@@ -1,6 +1,7 @@
 #!/bin/sh
 set -eu
 cd "$(dirname "$0")"
+QEMU=${QEMU:-qemu-system-x86_64}
 if [ ! -f build/tane-os.img ]; then
     python3 build.py
 fi
@@ -11,18 +12,22 @@ if [ ! -f build/disk.img ]; then
 fi
 case "${1:-}" in
     --serial)
-        # Ctrl-C exits QEMU; guest input arrives through our COM1 driver.
-        exec qemu-system-x86_64 -machine pc -accel tcg -m 64M \
+        # Ctrl-C reaches the shell. Ctrl-A X exits QEMU's stdio multiplexer.
+        exec "$QEMU" -machine pc -accel tcg -m 64M \
             -drive file=build/tane-os.img,format=raw,if=floppy,readonly=on \
             -drive file=build/disk.img,format=raw,if=ide \
-            -boot a -nic none -display none -monitor none -serial stdio
+            -boot a -netdev user,id=n0,net=10.0.2.0/24,ipv6-net=fd00::/64 \
+            -device rtl8139,netdev=n0,romfile= -display none \
+            -chardev stdio,id=console,mux=on,signal=off \
+            -serial chardev:console -mon chardev=console,mode=readline
         ;;
     "")
         # Click inside the VGA window to type. Ctrl-Alt-G releases capture.
-        exec qemu-system-x86_64 -machine pc -accel tcg -m 64M \
+        exec "$QEMU" -machine pc -accel tcg -m 64M \
             -drive file=build/tane-os.img,format=raw,if=floppy,readonly=on \
             -drive file=build/disk.img,format=raw,if=ide \
-            -boot a -nic none -monitor none -serial none
+            -boot a -netdev user,id=n0,net=10.0.2.0/24,ipv6-net=fd00::/64 \
+            -device rtl8139,netdev=n0,romfile= -monitor none -serial none
         ;;
     *)
         echo "Usage: sh run.sh [--serial]" >&2

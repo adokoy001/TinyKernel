@@ -1,6 +1,6 @@
 # Tane OS — Rustで作る最小の自前カーネル
 
-作成日: 2026 10 02 / 0.2〜0.5更新: 2026 10 03
+作成日: 2026 10 02 / 0.6更新: 2026 10 04
 
 既存OSの上で動くシェルではなく、仮想PCのCPUを直接動かす小さなカーネルです。
 OS本体、BIOS用ブートセクター、画面・入力ドライバを、このプロジェクト内で実装しています。
@@ -38,7 +38,7 @@ sh run.sh
 sh run.sh --serial
 ```
 
-端末モードは`Ctrl+C`でQEMUを終了します。`halt`後も、QEMUのウィンドウまたはプロセスを終了してください。
+端末モードは`Ctrl+C`で入力やpingを取り消し、`Ctrl+A`に続けて`X`でQEMUを終了します。`halt`後も同じ操作でQEMUを終了してください。
 
 ## 操作
 
@@ -65,6 +65,9 @@ sh run.sh --serial
 | `append NAME TEXT` | ファイルの末尾に追記する |
 | `cat NAME` | ファイルを表示する（チェックサムを確かめる） |
 | `rm NAME` | ファイルを消す（ディスク上の内容もゼロで消す） |
+| `net` / `net status` | NIC、固定アドレス、受信・送信・破棄の件数 |
+| `net ping 10.0.2.2` | IPv4のecho要求を3回送信（admin専用） |
+| `ping fd00::2 --count 2 --timeout 500` | IPv6のecho要求。回数1〜10、1回の期限1〜5000 ms |
 | `sec` | メモリ保護の状態、MACポリシーの表、拒否の件数 |
 | `audit` | MACで拒否された操作の記録（新しい16件、admin専用） |
 | `drop` | シェルをuserドメインへ下げる（再起動まで戻せない） |
@@ -81,7 +84,28 @@ sh run.sh --serial
 `beat`は100 msずつ眠ってはカウンターを増やし、眠っている間はCPUを使いません。`once`は300 ms眠ったあと自分で終了し、スタックのフレームが自動で回収されます。
 シェルと`idle`を含めて最大8タスクです。シェル（PID 1）と`idle`（PID 0）は止められません。タスクのスタックに使われているフレームは`free`できないので、`kill`で止めてください。
 
-Backspaceで編集できます。1行は最大127文字で、超過した文字は無視します。履歴、矢印での編集、日本語入力はありません。
+Backspaceで編集、Ctrl+Cで入力・pingの取消ができます。1行は最大127文字で、超過した文字は無視します。履歴、矢印での編集、日本語入力はありません。pingの実行中は取消以外の入力を捨てます。
+
+## ネットワークを試す
+
+`run.sh`はRTL8139を1台接続します。カーネル自身がPCIを探索し、静的DMAバッファを使ってEthernetを送受信します。受信はPITの10 ms刻みでポーリングし、1回に最大16フレームを処理します。ヒープとNIC割り込みは使いません。
+
+| 設定 | カーネル | QEMU側の仮想ゲートウェイ |
+| --- | --- | --- |
+| IPv4 | `10.0.2.15/24` | `10.0.2.2` |
+| IPv6 | `fd00::15/64`、MACから作るlink-local | `fd00::2` |
+
+```text
+net
+net ping 10.0.2.2 --count 3 --timeout 1000
+net ping fd00::2 --count 2 --timeout 1000
+```
+
+IPv4はARP、IPv6はNDPで次の送信先MACを解決し、ICMP/ICMPv6のecho要求を送ります。相手のIP、送信先MAC、識別子、連番、要求固有のpayloadが一致した返信だけを成功として扱います。アドレス解決を含む期限があり、近隣キャッシュは8件・30秒です。プロンプト待ちや`sleep`中も、自分宛てのARP/NDP/echo要求に応答します。ディスク処理など同期コマンド中は受信処理が遅れることがあります。
+
+固定設定は`src/netstack.rs`の`Config::qemu`です。QEMUの標準IPv6ネットワークはこの設定と異なるため、`run.sh`では`ipv6-net=fd00::/64`を明示しています。外部インターネットへのpingはホストとQEMUのICMP制限にも依存します。まず仮想ゲートウェイ、または統合テストの専用peerで確認してください。
+
+ネットワークの解析と実行は`src/netstack.rs`・`src/net.rs`、表示は`src/main.rs`に分けています。pingは型付きの返信、timeoutイベント、完了/取消の集計、機器・プロトコル・権限のエラーを返します。今後の構造化シェルやAPIからも同じ入口を呼べる土台です。型付きパイプラインやoperation registryはまだ実装していません。
 
 ## ソースから組み直す
 
@@ -96,7 +120,7 @@ sh run.sh
 ```
 
 `rust-toolchain.toml`でコンパイラを固定しています。必要なツールとターゲットの導入後は、オフラインでビルドできます。
-`build.py`はブートセクターの512バイト長と署名、カーネルの64 KiB制限、未解決シンボルを検査します。リンカは入口アドレスとスタックとの非重複を検査します。
+`build.py`はブートセクターの512バイト長と署名、カーネルの128 KiB制限、未解決シンボルを検査します。リンカは入口アドレスとスタックとの非重複を検査します。
 
 ## 読む順序
 
@@ -116,12 +140,18 @@ sh run.sh
 | `src/ata.rs` | ATA（IDE）ディスクのドライバ（PIO、ポーリング、待ち時間に上限） |
 | `src/fs.rs` | TaneFS：ラベルとチェックサム付きの小さなファイルシステム（ホストでもテスト） |
 | `src/storage.rs` | ディスクとTaneFSをつなぎ、ファイル操作の前に必ず`security`へ問い合わせる |
+| `src/inet.rs` | IPv4/IPv6のアドレス文字列、MAC、Internet checksum |
+| `src/pci.rs` | PCI設定空間の探索とI/O BAR・bus master設定 |
+| `src/rtl8139.rs` | RTL8139のDMA送受信、リング管理、有限回の待機と復旧 |
+| `src/netstack.rs` | Ethernet/ARP/IPv4/ICMP/IPv6/NDP/ICMPv6の純粋な処理 |
+| `src/net.rs` | ネットワークサービス、pingの権限判定、期限・取消・型付き結果 |
 | `src/shell.rs` | 割り当てなしのコマンド解析と検査付き整数計算 |
 | `kernel.ld` | カーネルを`0x10000`に配置し、コード・読み取り専用データ・データを4 KiB境界で分ける |
 | `build.py` | コンパイル、リンク、フロッピーイメージ生成 |
 | `run.sh` | QEMU起動 |
 | `tests/host.sh` | 純粋なロジックのモジュールをホストでテストする |
 | `tests/smoke.py` | 実際の起動と入出力を確かめる統合テスト |
+| `tests/network.py` | 実NICと専用Ethernet peerで通信・不正入力・取消・権限を確認 |
 | `build/build-info.txt` | ビルドしたサイズ、ツールチェーン、SHA-256 |
 
 ## どう起動するか
@@ -135,7 +165,8 @@ sh run.sh
 7. 自前のGDT/TSS/IDTを読み込み、PICを割り込み番号32〜47へ移し、PITを100 Hzに設定します。
 8. 起動中のコードをシェルタスク（PID 1、ドメインadmin）、`hlt`を繰り返す`idle`タスク（PID 0、ドメインkernel）として用意してから割り込みを有効にします。
 9. ATAディスクを探し、TaneFSがあればマウントします。
-10. シェルは入力がない間「入力待ち」で眠り、ほかのタスクか`idle`が動きます。キーボードかCOM1の割り込みでシェルがすぐに起こされます。
+10. PCIからRTL8139を探し、送受信バッファと固定アドレスを用意します。NICがなくてもシェルは使えます。
+11. NICがあるときはシェルが1ティックずつ眠り、入力と受信を調べます。NICがなければ従来の入力待ちを使います。
 
 フロッピー形式は1,474,560バイト、18セクター/トラック、2ヘッドの固定配置です。
 カーネルの実データは最大128 KiBです（`0x10000`〜`0x2ffff`）。1セクターずつ512バイト境界に読むので、フロッピーDMAの64 KiB境界をまたぎません。64 KiBごとに読み込み先のセグメントを進めます。イメージの残りはゼロで埋めています。
@@ -185,6 +216,7 @@ QEMUのRAMは`run.sh`で64 MiBに設定しています。このとき1 MiB以上
 | admin | memory | alloc free | admin user |
 | admin | task | spawn kill | admin user |
 | admin | file | create read write delete | admin user |
+| admin | network | net-ping | — |
 | user | memory | alloc free | user |
 | user | task | spawn kill | user |
 | user | file | create read write delete | user |
@@ -195,6 +227,7 @@ QEMUのRAMは`run.sh`で64 MiBに設定しています。このとき1 MiB以上
 - **継承**: `spawn`したタスクは、起動したシェルのドメインを引き継ぎます。
 - **見えないものは見せない**: `ls`は読めるファイルだけを表示します。
 - **監査**: ポリシーによる拒否と資源上限による拒否を、時刻・PID・ドメイン・操作・対象・理由とともに1つのログに記録します（新しい16件と通算件数）。`audit`で読めるのはadminだけで、件数は`sec`で誰でも確認できます。
+- **通信**: 要求されたpingは`src/net.rs`の入口で判定し、userの要求はARP/NDPも送る前に拒否します。状態表示は誰でも使えます。カーネル内部の自分宛てARP/NDP/echoへの応答は要求されたpingとは別です。宛先ごとの権限やソケットはまだありません。
 - **判定と実行の一体化**: タスクとフレームは、対象のラベルを調べる処理、判定、実行を、割り込み禁止の同じ区間で行います。ファイルを扱うのはシェルのタスクだけです。
 - **`free`の対象限定**: `free`できるのは`alloc`で得たフレームだけです。
 
@@ -246,10 +279,11 @@ ring 0だけで動く小さなカーネルです。
 - 割り込みはPITタイマー（IRQ 0、100 Hz）、キーボード（IRQ 1）、COM1受信（IRQ 4）だけを受け付けます。キーボードとCOM1の割り込みは入力待ちのシェルを起こすためだけに使い、データはシェルが読みます。割り込みを取りこぼしても止まらないよう、入力待ちは100 msごとにも見直します。
 - COM1がない構成（`sh run.sh`の画面モード）では、COM1を使わずにVGAとキーボードだけで動きます。
 
-ヒープ、仮想メモリ（タスクごとのページテーブル）、ユーザーモード（ring 3）とプロセス分離、システムコール、ネットワーク、ディレクトリのあるファイルシステムは未実装です。
+ヒープ、仮想メモリ（タスクごとのページテーブル）、ユーザーモード（ring 3）とプロセス分離、システムコール、ディレクトリのあるファイルシステムは未実装です。
+ネットワークはRTL8139が1台、MTU 1500、固定アドレス、ARP/NDPとechoのみです。DHCP、DNS、SLAAC、IPv6 DADによる自アドレス重複検査、UDP、TCP、ソケット、VLAN、IPv4断片の再構成、IPv6拡張ヘッダは未実装です。相手のDAD要求への応答は行います。
 Rustのpanicは表示して停止します。
 
-次は、ネットワーク（NICドライバ、ARP/IPv4/ICMP/UDP、同じポリシー表で扱うソケット）を予定しています。
+次は、UDPやソケットを同じポリシー表で扱い、シェルの共通operation registryと構造化パイプラインへ進められます。
 その後は、ring 3で動くユーザータスクとシステムコール（関門をその入口へ移す）、タスクごとのページテーブル、の順に進められます。
 
 ## テストを再実行する
@@ -258,6 +292,7 @@ Rustのpanicは表示して停止します。
 python3 build.py
 sh tests/host.sh
 python3 tests/smoke.py
+python3 tests/network.py
 ```
 
 `build/`内のテスト結果とスクリーンショットが、そのビルドで行った確認の記録です。
@@ -267,5 +302,11 @@ python3 tests/smoke.py
 - [Rust公式: x86_64-unknown-none](https://doc.rust-lang.org/rustc/platform-support/x86_64-unknown-none.html)
 - [QEMU公式: 起動オプション](https://www.qemu.org/docs/master/system/invocation.html)
 - [QEMU公式: Monitor](https://www.qemu.org/docs/master/system/monitor.html)
+- [QEMU公式: ネットワーク](https://www.qemu.org/docs/master/system/devices/net.html)
+- [Realtek: RTL8139C仕様書](https://people.freebsd.org/~wpaul/RealTek/spec-8139c(160).pdf)
+- [RFC 826: ARP](https://www.rfc-editor.org/rfc/rfc826.html)
+- [RFC 792: ICMP](https://www.rfc-editor.org/rfc/rfc792.html)
+- [RFC 4443: ICMPv6](https://www.rfc-editor.org/rfc/rfc4443.html)
+- [RFC 4861: IPv6 Neighbor Discovery](https://www.rfc-editor.org/rfc/rfc4861.html)
 
 これらはターゲット仕様と実行・検証方法の参照資料です。本プロジェクトのOS実装には既存OSのソースを組み込んでいません。

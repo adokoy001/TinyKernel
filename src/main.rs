@@ -16,9 +16,14 @@ mod ata;
 mod frames;
 mod fs;
 mod interrupts;
+mod inet;
 mod mac;
+mod net;
+mod netstack;
 mod paging;
+mod pci;
 mod resources;
+mod rtl8139;
 mod sched;
 mod security;
 mod shell;
@@ -133,6 +138,10 @@ pub extern "C" fn _start() -> ! {
         storage::Status::Unformatted { error, .. } => kprintln!("Disk: ATA found; {}", error.message()),
         storage::Status::Mounted { files, .. } => kprintln!("Disk: TaneFS mounted, {} files", files),
     }
+    match net::init() {
+        Ok(info) => kprintln!("Network: RTL8139 MAC {} | static IPv4 + IPv6", inet::Mac(info.mac)),
+        Err(error) => kprintln!("Network: unavailable ({})", error.message()),
+    }
     if !SERIAL_PRESENT.load(Ordering::Relaxed) {
         kprintln!("COM1 not detected; VGA and keyboard only.");
     }
@@ -145,6 +154,7 @@ pub extern "C" fn _start() -> ! {
     let mut previous_was_cr = false;
     prompt();
     loop {
+        net::poll();
         // Serial and PS/2 are both hardware drivers implemented here. Check
         // with IRQs off so an arriving byte cannot slip in before HLT.
         interrupts::disable();
@@ -161,13 +171,18 @@ pub extern "C" fn _start() -> ! {
                     console().byte(b'\n');
                     // Only printable ASCII bytes enter this buffer.
                     let command = core::str::from_utf8(&line[..used]).unwrap_or("");
-                    execute(command);
+                    execute(command, &mut keyboard);
                     used = 0;
                     prompt();
                 }
                 8 | 127 if used > 0 => {
                     used -= 1;
                     console().backspace();
+                }
+                3 => {
+                    used = 0;
+                    kprintln!("^C");
+                    prompt();
                 }
                 b' '..=b'~' if used < LINE_SIZE - 1 => {
                     line[used] = b;
@@ -177,8 +192,13 @@ pub extern "C" fn _start() -> ! {
                 _ => {} // Ignore controls and safely discard excess input.
             }
         } else {
-            // Block the shell task; other tasks or idle run until input.
-            tasks::wait_for_input(|| unsafe { serial_ready() } || keyboard.ready());
+            if net::present() {
+                // Polling NIC: the PIT wakes this consumer every 10 ms so
+                // peers can resolve addresses even at an idle prompt.
+                tasks::sleep_until(interrupts::ticks().saturating_add(1));
+            } else {
+                tasks::wait_for_input(|| unsafe { serial_ready() } || keyboard.ready());
+            }
         }
     }
 }
@@ -191,7 +211,7 @@ fn prompt() {
     console().color = 0x07;
 }
 
-fn execute(line: &str) {
+fn execute(line: &str, keyboard: &mut Keyboard) {
     match shell::parse(line) {
         Action::Help => {
             kprintln!("help | about | uptime | clear  This list | the kernel | time since boot");
@@ -203,19 +223,22 @@ fn execute(line: &str) {
             kprintln!("disk | format                  Disk status | create an empty TaneFS (admin)");
             kprintln!("ls | cat NAME | rm NAME        Files you may read | show one | delete one");
             kprintln!("write NAME TEXT | append ...   Replace or extend a file, creating it");
+            kprintln!("net | net ping IP              Network status | IPv4/IPv6 echo (admin)");
+            kprintln!("  --count N --timeout MS       1-10 probes, 1-5000 ms each; Ctrl-C cancels");
             kprintln!("sec | audit | drop             Policy | denials (admin) | lower to user");
             kprintln!("fault KIND                     Exception check: bp de ud gp pf df null ro nx");
             kprintln!("reboot | halt                  Restart | stop the CPU (admin)");
         }
         Action::About => {
-            kprintln!("Tane OS 0.5 - a small original Rust kernel.");
+            kprintln!("Tane OS 0.6 - a small original Rust kernel.");
             kprintln!("No Linux code, GRUB, external crates, libc, or host OS calls.");
             kprintln!("Firmware loads our 512-byte boot sector; it loads this kernel.");
             kprintln!("Ring 0, own GDT/TSS/IDT, PIT at {} Hz, E820 RAM in 4 KiB frames.", interrupts::TIMER_HZ);
             kprintln!("Preemptive round-robin kernel tasks with stacks from the frame allocator.");
             kprintln!("W^X paging, NX data, table-driven MAC, per-domain quotas, audit log.");
             kprintln!("ATA disk with TaneFS: labelled, checksummed files that survive reboots.");
-            kprintln!("CPU exceptions print registers; no process isolation, filesystem, or network.");
+            kprintln!("RTL8139, ARP/IPv4/ICMP, NDP/IPv6/ICMPv6; static network configuration.");
+            kprintln!("CPU exceptions print registers; all tasks share ring 0 and one address space.");
         }
         Action::Memory => {
             let end = addr_of!(__kernel_end) as usize;
@@ -245,10 +268,15 @@ fn execute(line: &str) {
         Action::Calc(Ok(result)) => kprintln!("= {}", result),
         Action::Calc(Err(error)) | Action::Sleep(Err(error)) | Action::Fault(Err(error))
         | Action::Free(Err(error)) | Action::Spawn(Err(error)) | Action::Kill(Err(error))
-        | Action::Cat(Err(error)) | Action::Remove(Err(error)) | Action::WriteUsage(error) => kprintln!("error: {}", error),
+        | Action::Cat(Err(error)) | Action::Remove(Err(error)) | Action::WriteUsage(error)
+        | Action::Ping(Err(error)) => kprintln!("error: {}", error),
         Action::Sleep(Ok(ms)) => {
             // Round up so the wait is never shorter than requested.
-            tasks::sleep_until(interrupts::ticks() + (ms * interrupts::TIMER_HZ).div_ceil(1000));
+            let deadline = interrupts::ticks() + (ms * interrupts::TIMER_HZ).div_ceil(1000);
+            while interrupts::ticks() < deadline {
+                net::poll();
+                tasks::sleep_until(if net::present() { interrupts::ticks().saturating_add(1).min(deadline) } else { deadline });
+            }
             kprintln!("slept {} ms", ms);
         }
         Action::Alloc => match allocate_frame() {
@@ -344,6 +372,31 @@ fn execute(line: &str) {
             Err(error) => report_storage(error),
         },
         Action::Resources => show_resources(),
+        Action::Network => show_network(),
+        Action::Ping(Ok(request)) => {
+            let Some(target) = inet::parse(request.address) else {
+                kprintln!("error: invalid literal IPv4/IPv6 address (DNS is not implemented)");
+                return;
+            };
+            let result = net::ping(target, request.count, request.timeout_ms,
+                || unsafe { serial_read() }.or_else(|| keyboard.read()) == Some(3),
+                |event| match event {
+                    net::Event::Reply(reply) => kprintln!("reply from {}: seq={} bytes={} ttl={} time={} ms",
+                        reply.source, reply.sequence, reply.bytes, reply.ttl, reply.rtt_ticks * 1000 / interrupts::TIMER_HZ),
+                    net::Event::Timeout { sequence } => kprintln!("timeout: seq={}", sequence),
+                });
+            match result {
+                Ok(summary) => {
+                    if summary.completion == net::Completion::Cancelled { kprintln!("cancelled"); }
+                    kprintln!("{} sent, {} received", summary.sent, summary.received);
+                }
+                Err(net::Error::Denied(denied)) => report_denied(denied),
+                Err(net::Error::Absent) => kprintln!("error: network unavailable (no RTL8139 detected)"),
+                Err(net::Error::InvalidRequest) => kprintln!("error: invalid ping bounds"),
+                Err(net::Error::Device(error)) => kprintln!("error: network device: {}", error.message()),
+                Err(net::Error::Protocol(error)) => kprintln!("error: network: {}", error.message()),
+            }
+        }
         Action::Audit => {
             if permitted(Op::ReadAudit) {
                 kprintln!("MAC denials: {} since boot (newest {} kept)", security::denials(), security::AUDIT_RECORDS);
@@ -512,6 +565,22 @@ fn show_resources() {
     kprintln!("Shell and idle are not charged. CPU caps apply while other domains wait.");
 }
 
+fn show_network() {
+    let Some(status) = net::status() else {
+        kprintln!("Network: unavailable (no RTL8139 detected)");
+        return;
+    };
+    let config = status.config;
+    kprintln!("RTL8139 I/O 0x{:x} MAC {}", status.info.io, inet::Mac(status.info.mac));
+    kprintln!("IPv4 {} mask {} gateway {}", inet::IpAddr::V4(config.ipv4),
+        inet::IpAddr::V4(config.netmask4), inet::IpAddr::V4(config.gateway4));
+    kprintln!("IPv6 {}/{} gateway {}", inet::IpAddr::V6(config.ipv6), config.prefix6,
+        inet::IpAddr::V6(config.gateway6));
+    kprintln!("RX {} TX {} dropped {} | {} cached neighbors",
+        status.stats.rx, status.stats.tx, status.stats.dropped, status.neighbors);
+    kprintln!("Polling, MTU 1500, static addresses; 10 ms timer resolution");
+}
+
 fn show_security() {
     let (pid, name) = tasks::current();
     let (text_start, text_end) = paging::text_range();
@@ -640,10 +709,10 @@ impl Write for Console {
     }
 }
 
-struct Keyboard { left_shift: bool, right_shift: bool, caps: bool, extended: bool, skip: u8 }
+struct Keyboard { left_shift: bool, right_shift: bool, left_ctrl: bool, right_ctrl: bool, caps: bool, extended: bool, skip: u8 }
 
 impl Keyboard {
-    fn new() -> Self { Self { left_shift: false, right_shift: false, caps: false, extended: false, skip: 0 } }
+    fn new() -> Self { Self { left_shift: false, right_shift: false, left_ctrl: false, right_ctrl: false, caps: false, extended: false, skip: 0 } }
 
     fn ready(&self) -> bool {
         unsafe { inb(0x64) & 1 != 0 }
@@ -663,9 +732,13 @@ impl Keyboard {
         if scan == 0xe0 { self.extended = true; return None; }
         if self.extended {
             self.extended = false;
+            if scan == 0x1d { self.right_ctrl = true; return None; }
+            if scan == 0x9d { self.right_ctrl = false; return None; }
             return if scan == 0x1c { Some(b'\n') } else { None };
         }
         match scan {
+            0x1d => { self.left_ctrl = true; return None; }
+            0x9d => { self.left_ctrl = false; return None; }
             0x2a => { self.left_shift = true; return None; }
             0xaa => { self.left_shift = false; return None; }
             0x36 => { self.right_shift = true; return None; }
@@ -675,6 +748,7 @@ impl Keyboard {
             _ => {}
         }
         let shift = self.left_shift || self.right_shift;
+        if scan == 0x2e && (self.left_ctrl || self.right_ctrl) { return Some(3); }
         let b = match scan {
             0x02..=0x0d => {
                 let table = if shift { b"!@#$%^&*()_+" } else { b"1234567890-=" };

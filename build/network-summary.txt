@@ -1,0 +1,16 @@
+PASS RTL8139 is detected with the configured IPv4 and IPv6 addresses
+PASS IPv4 ARP discovery and three checksummed ICMP echo exchanges
+PASS IPv6 Neighbor Discovery and checksummed ICMPv6 echo exchanges
+PASS The idle shell answers ARP, multicast Neighbor Discovery and incoming IPv4/IPv6 echo
+PASS Short and malformed frames are ignored and the receive ring remains usable
+PASS Receive-ring wrap and transmit-slot reuse preserve 120 echo replies
+PASS Corrupt ICMPv4 and ICMPv6 replies cannot satisfy a ping
+PASS Valid packets for another ping identifier cannot satisfy the active job
+PASS Unanswered requests stop within the configured timeout
+PASS Ctrl-C cancels a running ping and restores the shell promptly
+PASS A new job succeeds after timeout and cancellation
+PASS User domain can inspect status but cannot transmit a privileged ping
+PASS Booting without a NIC leaves the shell usable and reports unavailable networking
+PASS The ordinary QEMU user-network gateway answers IPv4 ping
+PASS The configured QEMU user-network gateway answers IPv6 ping
+15 network integration checks passed

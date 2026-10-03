@@ -1,17 +1,17 @@
 Tane OS QEMU integration test
-Elapsed: 14.54s
-Transport (main): unix sockets
-Transport (reboot): unix sockets
-Transport (integrity): unix sockets
-Transport (fault-de): unix sockets
-Transport (fault-ud): unix sockets
-Transport (fault-gp): unix sockets
-Transport (fault-pf): unix sockets
-Transport (fault-df): unix sockets
-Transport (fault-null): unix sockets
-Transport (fault-ro): unix sockets
-Transport (fault-nx): unix sockets
-Transport (vga-only): unix sockets
+Elapsed: 15.28s
+Transport (main): local pipes (Unix sockets unavailable or disabled)
+Transport (reboot): local pipes (Unix sockets unavailable or disabled)
+Transport (integrity): local pipes (Unix sockets unavailable or disabled)
+Transport (fault-de): local pipes (Unix sockets unavailable or disabled)
+Transport (fault-ud): local pipes (Unix sockets unavailable or disabled)
+Transport (fault-gp): local pipes (Unix sockets unavailable or disabled)
+Transport (fault-pf): local pipes (Unix sockets unavailable or disabled)
+Transport (fault-df): local pipes (Unix sockets unavailable or disabled)
+Transport (fault-null): local pipes (Unix sockets unavailable or disabled)
+Transport (fault-ro): local pipes (Unix sockets unavailable or disabled)
+Transport (fault-nx): local pipes (Unix sockets unavailable or disabled)
+Transport (vga-only): local pipes (Unix sockets unavailable or disabled)
 PASS: BIOS floppy boots into the Rust shell
 PASS: help/about/mem describe the running kernel
 PASS: serial input and echo preserve text

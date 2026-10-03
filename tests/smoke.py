@@ -375,7 +375,9 @@ def main():
         if b"COM1 not detected" in result:
             raise AssertionError("COM1 was not detected although QEMU provides it")
         contains(machine.command(b"help\r"), b"calc A OP B")
-        contains(machine.command(b"about\r"), b"CPU exceptions print registers; no process isolation, filesystem, or network.")
+        about = machine.command(b"about\r")
+        contains(about, b"CPU exceptions print registers; all tasks share ring 0 and one address space.")
+        contains(about, b"RTL8139, ARP/IPv4/ICMP, NDP/IPv6/ICMPv6; static network configuration.")
         result = machine.command(b"mem\r")
         contains(result, b"First 1 GiB identity mapped: 4 KiB pages below 2 MiB, then 2 MiB pages.")
         contains(result, b"Command buffer: 128 bytes (max 127 input).")

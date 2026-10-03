@@ -1,0 +1,21 @@
+TANE OS / RUST BARE METAL
+Self-made BIOS loader + Rust kernel. External crates: 0.
+64-bit mode | VGA + COM1 | PS/2 keyboard | no heap
+RAM: 7 E820 entries | 16096 free 4 KiB frames (64384 KiB) above 1 MiB
+IDT: 32 exception handlers, #DF on IST1 | PIT timer 100 Hz
+Tasks: preemptive round robin, up to 8 tasks
+Protection: NX data | kernel text read-only | null page unmapped | CR0.WP
+MAC: enforcing compiled-in policy | shell domain admin (drop lowers it)
+Disk: none (attach an IDE disk for TaneFS)
+Network: RTL8139 MAC 52:54:00:12:34:56 | static IPv4 + IPv6
+Type help. English keyboard / ASCII input.
+READY
+tane> ping 10.0.2.2 --count 2 --timeout 500
+reply from 10.0.2.2: seq=1 bytes=16 ttl=255 time=0 ms
+reply from 10.0.2.2: seq=2 bytes=16 ttl=255 time=0 ms
+2 sent, 2 received
+tane> ping fd00::2 --count 2 --timeout 500
+reply from fd00::2: seq=1 bytes=16 ttl=255 time=0 ms
+reply from fd00::2: seq=2 bytes=16 ttl=255 time=0 ms
+2 sent, 2 received
+tane> 

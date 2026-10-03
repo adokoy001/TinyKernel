@@ -13,3 +13,7 @@ build/fs-tests
 build/resources-tests
 build/disk.img
 build/inet-tests
+build/pci-tests
+build/rtl8139-tests
+build/netstack-tests
+tests/__pycache__/

@@ -1,0 +1,81 @@
+
+running 12 tests
+............
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 5 tests
+.....
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 5 tests
+.....
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 6 tests
+......
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 6 tests
+......
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 4 tests
+....
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 2 tests
+..
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 3 tests
+...
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 10 tests
+..........
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+warning: method `is_unspecified` is never used
+  --> tests/../src/inet.rs:14:12
+   |
+13 | impl IpAddr {
+   | ----------- method in this implementation
+14 |     pub fn is_unspecified(&self) -> bool {
+   |            ^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` on by default
+
+warning: method `message` is never used
+  --> tests/../src/netstack.rs:41:12
+   |
+40 | impl Error {
+   | ---------- method in this implementation
+41 |     pub fn message(self) -> &'static str {
+   |            ^^^^^^^
+
+warning: methods `config` and `neighbors` are never used
+  --> tests/../src/netstack.rs:85:12
+   |
+81 | impl Stack {
+   | ---------- methods in this implementation
+...
+85 |     pub fn config(&self) -> &Config { &self.config }
+   |            ^^^^^^
+86 |     pub fn neighbors(&self) -> &[Option<Neighbor>; 8] { &self.neighbors }
+   |            ^^^^^^^^^
+
+warning: 3 warnings emitted
+
+
+running 15 tests
+...............
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+

@@ -38,6 +38,7 @@ pub enum Class {
     Memory,
     Task,
     File,
+    Network,
 }
 
 impl Class {
@@ -47,6 +48,7 @@ impl Class {
             Class::Memory => "memory",
             Class::Task => "task",
             Class::File => "file",
+            Class::Network => "network",
         }
     }
 }
@@ -66,6 +68,7 @@ pub enum Op {
     Read,
     Write,
     Delete,
+    NetPing,
 }
 
 impl Op {
@@ -84,6 +87,7 @@ impl Op {
             Op::Read => "read",
             Op::Write => "write",
             Op::Delete => "delete",
+            Op::NetPing => "net-ping",
         }
     }
 
@@ -93,6 +97,7 @@ impl Op {
             Op::Alloc | Op::Free => Class::Memory,
             Op::Spawn | Op::Kill => Class::Task,
             Op::Create | Op::Read | Op::Write | Op::Delete => Class::File,
+            Op::NetPing => Class::Network,
         }
     }
 
@@ -116,11 +121,12 @@ use Domain::{Admin, User};
 
 /// The policy. Anything not allowed here is denied, including every request
 /// by or on a `kernel` object.
-pub const POLICY: [Rule; 7] = [
+pub const POLICY: [Rule; 8] = [
     Rule { subject: Admin, class: Class::System, ops: &[Op::Halt, Op::Reboot, Op::Fault, Op::ReadAudit, Op::Format], objects: &[] },
     Rule { subject: Admin, class: Class::Memory, ops: &[Op::Alloc, Op::Free], objects: &[Admin, User] },
     Rule { subject: Admin, class: Class::Task, ops: &[Op::Spawn, Op::Kill], objects: &[Admin, User] },
     Rule { subject: Admin, class: Class::File, ops: &[Op::Create, Op::Read, Op::Write, Op::Delete], objects: &[Admin, User] },
+    Rule { subject: Admin, class: Class::Network, ops: &[Op::NetPing], objects: &[] },
     Rule { subject: User, class: Class::Memory, ops: &[Op::Alloc, Op::Free], objects: &[User] },
     Rule { subject: User, class: Class::Task, ops: &[Op::Spawn, Op::Kill], objects: &[User] },
     Rule { subject: User, class: Class::File, ops: &[Op::Create, Op::Read, Op::Write, Op::Delete], objects: &[User] },
@@ -207,8 +213,8 @@ mod tests {
     use super::{allowed, may_transition, AuditLog, Domain, Op, Reason, Record, POLICY};
     use Domain::*;
 
-    const ALL_OPS: [Op; 13] = [Op::Halt, Op::Reboot, Op::Fault, Op::ReadAudit, Op::Format, Op::Alloc, Op::Free,
-                               Op::Spawn, Op::Kill, Op::Create, Op::Read, Op::Write, Op::Delete];
+    const ALL_OPS: [Op; 14] = [Op::Halt, Op::Reboot, Op::Fault, Op::ReadAudit, Op::Format, Op::Alloc, Op::Free,
+                               Op::Spawn, Op::Kill, Op::Create, Op::Read, Op::Write, Op::Delete, Op::NetPing];
     const OBJECTS: [Option<Domain>; 4] = [None, Some(Kernel), Some(Admin), Some(User)];
 
     #[test]
@@ -228,7 +234,7 @@ mod tests {
         for op in [Op::Alloc, Op::Spawn, Op::Create] {
             assert!(allowed(User, op, None), "{op:?}");
         }
-        for op in [Op::Halt, Op::Reboot, Op::Fault, Op::ReadAudit, Op::Format] {
+        for op in [Op::Halt, Op::Reboot, Op::Fault, Op::ReadAudit, Op::Format, Op::NetPing] {
             assert!(!allowed(User, op, None), "{op:?}");
         }
         for op in ALL_OPS.iter().filter(|op| op.has_object()) {
@@ -250,6 +256,7 @@ mod tests {
             assert!(!allowed(subject, Op::Alloc, Some(User)));
             assert!(!allowed(subject, Op::Kill, None));
             assert!(!allowed(subject, Op::Read, None));
+            assert!(!allowed(subject, Op::NetPing, Some(User)));
         }
     }
 

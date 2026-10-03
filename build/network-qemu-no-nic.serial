@@ -1,0 +1,19 @@
+TANE OS / RUST BARE METAL
+Self-made BIOS loader + Rust kernel. External crates: 0.
+64-bit mode | VGA + COM1 | PS/2 keyboard | no heap
+RAM: 7 E820 entries | 16096 free 4 KiB frames (64384 KiB) above 1 MiB
+IDT: 32 exception handlers, #DF on IST1 | PIT timer 100 Hz
+Tasks: preemptive round robin, up to 8 tasks
+Protection: NX data | kernel text read-only | null page unmapped | CR0.WP
+MAC: enforcing compiled-in policy | shell domain admin (drop lowers it)
+Disk: none (attach an IDE disk for TaneFS)
+Network: unavailable (RTL8139 PCI device not found)
+Type help. English keyboard / ASCII input.
+READY
+tane> net
+Network: unavailable (no RTL8139 detected)
+tane> ping 10.0.2.2 --count 1 --timeout 100
+error: network unavailable (no RTL8139 detected)
+tane> calc 12 * 3
+= 36
+tane> 

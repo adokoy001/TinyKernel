@@ -16,6 +16,8 @@ pub enum Action<'a> {
     Audit,
     DropToUser,
     Disk,
+    Network,
+    Ping(Result<PingRequest<'a>, &'static str>),
     Format,
     List,
     Cat(Result<&'a str, &'static str>),
@@ -79,6 +81,41 @@ const FREE_USAGE: &str = "usage: free ADDR (0x hex or decimal)";
 const SPAWN_USAGE: &str = "usage: spawn spin|beat|once";
 const KILL_USAGE: &str = "usage: kill PID";
 
+/// A bounded, literal request. The networking layer parses the IP address;
+/// no command substitution, name lookup, or extra evaluation takes place.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct PingRequest<'a> {
+    pub address: &'a str,
+    pub count: u8,
+    pub timeout_ms: u64,
+}
+
+const PING_USAGE: &str = "usage: net ping IP [--count 1-10] [--timeout 1-5000] (milliseconds)";
+
+fn ping(text: &str) -> Result<PingRequest<'_>, &'static str> {
+    let mut words = text.split_ascii_whitespace();
+    let address = words.next().ok_or(PING_USAGE)?;
+    let mut request = PingRequest { address, count: 3, timeout_ms: 1000 };
+    let (mut count_seen, mut timeout_seen) = (false, false);
+    while let Some(flag) = words.next() {
+        let number = words.next().ok_or(PING_USAGE)?;
+        if !number.bytes().all(|b| b.is_ascii_digit()) { return Err(PING_USAGE); }
+        let value = number.parse::<u64>().map_err(|_| PING_USAGE)?;
+        match flag {
+            "--count" if !count_seen && (1..=10).contains(&value) => {
+                request.count = value as u8;
+                count_seen = true;
+            }
+            "--timeout" if !timeout_seen && (1..=5000).contains(&value) => {
+                request.timeout_ms = value;
+                timeout_seen = true;
+            }
+            _ => return Err(PING_USAGE),
+        }
+    }
+    Ok(request)
+}
+
 /// Trim the command line's outer ASCII whitespace. `echo` consumes one
 /// separator after its name, preserving all remaining spaces inside the line.
 pub fn parse(line: &str) -> Action<'_> {
@@ -97,6 +134,14 @@ pub fn parse(line: &str) -> Action<'_> {
         "echo" => Action::Echo(text),
         "calc" => Action::Calc(calculate(text)),
         "sleep" => Action::Sleep(sleep(text)),
+        "ping" => Action::Ping(ping(text)),
+        "net" => {
+            let text = text.trim_ascii();
+            if text.is_empty() || text == "status" { Action::Network }
+            else if let Some(arguments) = text.strip_prefix("ping").filter(|s| s.is_empty() || s.starts_with(|c: char| c.is_ascii_whitespace())) {
+                Action::Ping(ping(arguments))
+            } else { Action::Ping(Err(PING_USAGE)) }
+        }
         "fault" => Action::Fault(fault(text)),
         "free" => Action::Free(address(text)),
         "cat" => Action::Cat(one_name(text, "usage: cat NAME")),
@@ -208,7 +253,24 @@ fn calculate(text: &str) -> Result<i64, &'static str> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse, Action, Fault, TaskKind};
+    use super::{parse, Action, Fault, TaskKind, PingRequest};
+
+    #[test]
+    fn bounded_literal_network_requests() {
+        assert_eq!(parse("net"), Action::Network);
+        assert_eq!(parse("net status"), Action::Network);
+        assert_eq!(parse("net ping fd00::2 --timeout 250 --count 1"),
+            Action::Ping(Ok(PingRequest { address: "fd00::2", count: 1, timeout_ms: 250 })));
+        assert_eq!(parse("ping 10.0.2.2"),
+            Action::Ping(Ok(PingRequest { address: "10.0.2.2", count: 3, timeout_ms: 1000 })));
+        for line in ["net ping", "net pingx 10.0.2.2", "net ping 10.0.2.2 --count 0",
+            "ping 10.0.2.2 --count 11", "ping 10.0.2.2 --count +1", "ping 10.0.2.2 --timeout 0",
+            "ping 10.0.2.2 --timeout 5001", "ping 10.0.2.2 --count 1 --count 1",
+            "ping 10.0.2.2 --timeout 10 --timeout 10", "ping 10.0.2.2 --count",
+            "ping 10.0.2.2 extra", "ping 10.0.2.2 --count 18446744073709551616"] {
+            assert!(matches!(parse(line), Action::Ping(Err(_))), "{line}");
+        }
+    }
 
     #[test]
     fn exact_commands_and_outer_whitespace() {
