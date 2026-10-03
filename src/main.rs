@@ -2,19 +2,38 @@
 #![no_main]
 
 // Tane OS: an original, single-task kernel. No allocator and no external crates.
+
+// Each print borrows the global console only for the duration of one line.
+macro_rules! kprintln {
+    ($($arg:tt)*) => {{
+        use core::fmt::Write as _;
+        writeln!(crate::console(), $($arg)*).ok();
+    }};
+}
+
+mod interrupts;
 mod shell;
 
 use core::arch::asm;
 use core::fmt::{self, Write};
 use core::panic::PanicInfo;
 use core::ptr::{addr_of, addr_of_mut, read_volatile, write_volatile};
-use shell::Action;
+use core::sync::atomic::{AtomicBool, Ordering};
+use shell::{Action, Fault};
 
 const VGA: *mut u16 = 0xb8000 as *mut u16;
 const WIDTH: usize = 80;
 const HEIGHT: usize = 25;
 const SERIAL: u16 = 0x3f8;
 const LINE_SIZE: usize = 128;
+
+static mut CONSOLE: Console = Console { x: 0, y: 0, color: 0x07 };
+static SERIAL_PRESENT: AtomicBool = AtomicBool::new(false);
+
+fn console() -> &'static mut Console {
+    // Single CPU. Only exception reports print from interrupt context.
+    unsafe { &mut *addr_of_mut!(CONSOLE) }
+}
 
 extern "C" {
     static mut __bss_start: u8;
@@ -23,6 +42,7 @@ extern "C" {
 }
 
 // The BIOS loader calls this address with paging on, IF=0, and a valid stack.
+// Interrupts are enabled once the kernel's own GDT, TSS and IDT are loaded.
 #[no_mangle]
 #[link_section = ".text.entry"]
 pub extern "C" fn _start() -> ! {
@@ -33,29 +53,36 @@ pub extern "C" fn _start() -> ! {
             write_volatile(p, 0);
             p = p.add(1);
         }
-        // IRQs are unused: explicitly mask the two legacy PICs.
+        // Mask the legacy PICs until the IDT exists.
         outb(0x21, 0xff);
         outb(0xa1, 0xff);
         serial_init();
     }
-    let mut console = Console::new();
-    console.clear();
-    console.color = 0x0b;
-    writeln!(console, "TANE OS / RUST BARE METAL").ok();
-    console.color = 0x07;
-    writeln!(console, "Self-made BIOS loader + Rust kernel. External crates: 0.").ok();
-    writeln!(console, "64-bit mode | VGA + COM1 | polling keyboard | no heap").ok();
-    writeln!(console, "Type help. English keyboard / ASCII input.").ok();
-    writeln!(console, "READY").ok();
+    console().clear();
+    console().color = 0x0b;
+    kprintln!("TANE OS / RUST BARE METAL");
+    console().color = 0x07;
+    kprintln!("Self-made BIOS loader + Rust kernel. External crates: 0.");
+    kprintln!("64-bit mode | VGA + COM1 | PS/2 keyboard | no heap");
+    unsafe { interrupts::init(); }
+    kprintln!("IDT: 32 exception handlers, #DF on IST1 | PIT timer {} Hz", interrupts::TIMER_HZ);
+    if !SERIAL_PRESENT.load(Ordering::Relaxed) {
+        kprintln!("COM1 not detected; VGA and keyboard only.");
+    }
+    kprintln!("Type help. English keyboard / ASCII input.");
+    kprintln!("READY");
 
     let mut keyboard = Keyboard::new();
     let mut line = [0u8; LINE_SIZE];
     let mut used = 0;
     let mut previous_was_cr = false;
-    prompt(&mut console);
+    prompt();
     loop {
-        // Serial and PS/2 are both hardware drivers implemented here.
+        // Serial and PS/2 are both hardware drivers implemented here. Check
+        // with IRQs off so an arriving byte cannot slip in before HLT.
+        interrupts::disable();
         let byte = unsafe { serial_read() }.or_else(|| keyboard.read());
+        interrupts::enable();
         if let Some(b) = byte {
             if b == b'\n' && previous_was_cr {
                 previous_was_cr = false;
@@ -64,80 +91,101 @@ pub extern "C" fn _start() -> ! {
             previous_was_cr = b == b'\r';
             match b {
                 b'\r' | b'\n' => {
-                    console.byte(b'\n');
+                    console().byte(b'\n');
                     // Only printable ASCII bytes enter this buffer.
                     let command = core::str::from_utf8(&line[..used]).unwrap_or("");
-                    execute(command, &mut console);
+                    execute(command);
                     used = 0;
-                    prompt(&mut console);
+                    prompt();
                 }
                 8 | 127 if used > 0 => {
                     used -= 1;
-                    console.backspace();
+                    console().backspace();
                 }
                 b' '..=b'~' if used < LINE_SIZE - 1 => {
                     line[used] = b;
                     used += 1;
-                    console.byte(b);
+                    console().byte(b);
                 }
                 _ => {} // Ignore controls and safely discard excess input.
             }
         } else {
-            // IF=0, so HLT would prevent subsequent polled keyboard input.
-            core::hint::spin_loop();
+            // Re-check after any interrupt: timer, keyboard, or COM1 data.
+            interrupts::disable();
+            if !unsafe { serial_ready() } && !keyboard.ready() {
+                interrupts::wait();
+            }
+            interrupts::enable();
         }
     }
 }
 
-fn prompt(console: &mut Console) {
-    console.color = 0x0a;
-    write!(console, "tane> ").ok();
-    console.color = 0x07;
+fn prompt() {
+    console().color = 0x0a;
+    write!(console(), "tane> ").ok();
+    console().color = 0x07;
 }
 
-fn execute(line: &str, console: &mut Console) {
+fn execute(line: &str) {
     match shell::parse(line) {
         Action::Help => {
-            writeln!(console, "help          Show commands").ok();
-            writeln!(console, "about         Describe this kernel").ok();
-            writeln!(console, "mem           Show the fixed memory layout").ok();
-            writeln!(console, "echo TEXT     Print text").ok();
-            writeln!(console, "calc A OP B   Integer + - * / (example: calc 12 * 3)").ok();
-            writeln!(console, "clear         Clear the screen").ok();
-            writeln!(console, "reboot        Restart the virtual machine").ok();
-            writeln!(console, "halt          Stop the CPU (close QEMU to exit)").ok();
+            kprintln!("help          Show commands");
+            kprintln!("about         Describe this kernel");
+            kprintln!("mem           Show the fixed memory layout");
+            kprintln!("uptime        Time since boot, counted by timer interrupts");
+            kprintln!("echo TEXT     Print text");
+            kprintln!("calc A OP B   Integer + - * / (example: calc 12 * 3)");
+            kprintln!("sleep MS      Wait MS milliseconds (0-60000) with HLT");
+            kprintln!("fault KIND    Raise a CPU exception: bp de ud gp pf df");
+            kprintln!("clear         Clear the screen");
+            kprintln!("reboot        Restart the virtual machine");
+            kprintln!("halt          Stop the CPU (close QEMU to exit)");
         }
         Action::About => {
-            writeln!(console, "Tane OS 0.1 - a small original Rust kernel.").ok();
-            writeln!(console, "No Linux code, GRUB, external crates, libc, or host OS calls.").ok();
-            writeln!(console, "Firmware loads our 512-byte boot sector; it loads this kernel.").ok();
-            writeln!(console, "One task, ring 0, fixed memory, interrupts disabled.").ok();
-            writeln!(console, "No process isolation, filesystem, network, or exception handlers.").ok();
+            kprintln!("Tane OS 0.2 - a small original Rust kernel.");
+            kprintln!("No Linux code, GRUB, external crates, libc, or host OS calls.");
+            kprintln!("Firmware loads our 512-byte boot sector; it loads this kernel.");
+            kprintln!("One task, ring 0, fixed memory, own GDT/TSS/IDT, PIT at {} Hz.", interrupts::TIMER_HZ);
+            kprintln!("CPU exceptions print registers; no process isolation, filesystem, or network.");
         }
         Action::Memory => {
             let end = addr_of!(__kernel_end) as usize;
-            writeln!(console, "Page tables: 0x1000..0x4000").ok();
-            writeln!(console, "Boot sector: 0x7c00..0x7e00").ok();
-            writeln!(console, "Kernel:      0x10000..0x{:x} ({} bytes incl. BSS)", end, end - 0x10000).ok();
-            writeln!(console, "Stack range: 0x80000..0x90000 (grows down)").ok();
-            writeln!(console, "VGA text:    0xb8000").ok();
-            writeln!(console, "First 1 GiB identity mapped; this is NOT detected RAM size.").ok();
-            writeln!(console, "No heap. Command buffer: {} bytes (max {} input).", LINE_SIZE, LINE_SIZE - 1).ok();
+            kprintln!("Page tables: 0x1000..0x4000");
+            kprintln!("Boot sector: 0x7c00..0x7e00");
+            kprintln!("Kernel:      0x10000..0x{:x} ({} bytes incl. BSS)", end, end - 0x10000);
+            kprintln!("Stack range: 0x80000..0x90000 (grows down)");
+            kprintln!("VGA text:    0xb8000");
+            kprintln!("First 1 GiB identity mapped; this is NOT detected RAM size.");
+            kprintln!("No heap. Command buffer: {} bytes (max {} input).", LINE_SIZE, LINE_SIZE - 1);
         }
-        Action::Echo(text) => { writeln!(console, "{}", text).ok(); }
-        Action::Calc(Ok(result)) => { writeln!(console, "= {}", result).ok(); }
-        Action::Calc(Err(error)) => { writeln!(console, "error: {}", error).ok(); }
+        Action::Uptime => {
+            let ticks = interrupts::ticks();
+            let hundredths = ticks * 100 / interrupts::TIMER_HZ;
+            kprintln!("up {}.{:02} s ({} timer ticks at {} Hz)", hundredths / 100, hundredths % 100, ticks, interrupts::TIMER_HZ);
+        }
+        Action::Echo(text) => kprintln!("{}", text),
+        Action::Calc(Ok(result)) => kprintln!("= {}", result),
+        Action::Calc(Err(error)) | Action::Sleep(Err(error)) | Action::Fault(Err(error)) => kprintln!("error: {}", error),
+        Action::Sleep(Ok(ms)) => {
+            // Round up so the wait is never shorter than requested.
+            let target = interrupts::ticks() + (ms * interrupts::TIMER_HZ).div_ceil(1000);
+            while interrupts::ticks() < target {
+                interrupts::wait();
+            }
+            kprintln!("slept {} ms", ms);
+        }
+        Action::Fault(Ok(fault)) => raise(fault),
         Action::Clear => {
-            console.clear();
+            console().clear();
             // Clear common ANSI terminals on the serial side as well.
             for b in b"\x1b[2J\x1b[H" { unsafe { serial_write(*b); } }
         }
         Action::Halt => {
-            writeln!(console, "HALTED").ok();
+            kprintln!("HALTED");
             halt();
         }
         Action::Reboot => {
-            writeln!(console, "REBOOTING").ok();
+            kprintln!("REBOOTING");
             // QEMU's PC implements the 8042 controller reset command.
             unsafe {
                 for _ in 0..100_000 {
@@ -149,16 +197,37 @@ fn execute(line: &str, console: &mut Console) {
             }
             halt();
         }
-        Action::Unknown => { writeln!(console, "Unknown command. Type help.").ok(); }
+        Action::Unknown => kprintln!("Unknown command. Type help."),
         Action::Empty => {}
     }
+}
+
+/// Deliberately execute an instruction that makes the CPU raise `fault`.
+fn raise(fault: Fault) {
+    unsafe {
+        match fault {
+            Fault::Breakpoint => asm!("int3", options(nomem, nostack)),
+            Fault::DivideError => asm!("div {0:e}", in(reg) 0u32, inout("eax") 1u32 => _, inout("edx") 0u32 => _,
+                                       options(nomem, nostack)),
+            Fault::InvalidOpcode => asm!("ud2", options(nomem, nostack)),
+            // Bit 63 set without the upper bits: a non-canonical address.
+            Fault::GeneralProtection => asm!("mov {0}, qword ptr [{0}]", inout(reg) 0x8000_0000_0000_0000u64 => _,
+                                             options(readonly, nostack)),
+            // Only the first 1 GiB is mapped.
+            Fault::PageFault => asm!("mov {0}, qword ptr [{0}]", inout(reg) 0x4000_0000u64 => _,
+                                     options(readonly, nostack)),
+            // With RSP unmapped, delivering #UD page-faults and delivering that
+            // #PF faults again: the CPU escalates to #DF, which uses IST1.
+            Fault::DoubleFault => asm!("mov rsp, {}", "ud2", in(reg) 0x4000_1000u64, options(noreturn)),
+        }
+    }
+    // Only #BP returns; every other exception halts in its handler.
+    kprintln!("returned to the shell after the exception");
 }
 
 struct Console { x: usize, y: usize, color: u8 }
 
 impl Console {
-    fn new() -> Self { Self { x: 0, y: 0, color: 0x07 } }
-
     fn clear(&mut self) {
         for i in 0..WIDTH * HEIGHT {
             unsafe { write_volatile(VGA.add(i), 0x0720); }
@@ -234,6 +303,10 @@ struct Keyboard { left_shift: bool, right_shift: bool, caps: bool, extended: boo
 impl Keyboard {
     fn new() -> Self { Self { left_shift: false, right_shift: false, caps: false, extended: false, skip: 0 } }
 
+    fn ready(&self) -> bool {
+        unsafe { inb(0x64) & 1 != 0 }
+    }
+
     fn read(&mut self) -> Option<u8> {
         let status = unsafe { inb(0x64) };
         if status & 1 == 0 { return None; }
@@ -286,45 +359,57 @@ impl Keyboard {
     }
 }
 
-unsafe fn outb(port: u16, value: u8) {
+pub(crate) unsafe fn outb(port: u16, value: u8) {
     asm!("out dx, al", in("dx") port, in("al") value, options(nomem, nostack, preserves_flags));
 }
 
-unsafe fn inb(port: u16) -> u8 {
+pub(crate) unsafe fn inb(port: u16) -> u8 {
     let value: u8;
     asm!("in al, dx", in("dx") port, out("al") value, options(nomem, nostack, preserves_flags));
     value
 }
 
 unsafe fn serial_init() {
-    outb(SERIAL + 1, 0x00); // UART interrupt enable = off.
+    // Without a UART, reads float to 0xff; the scratch register detects that.
+    outb(SERIAL + 7, 0x5a);
+    if inb(SERIAL + 7) != 0x5a { return; }
+    outb(SERIAL + 7, 0xa5);
+    if inb(SERIAL + 7) != 0xa5 { return; }
+    SERIAL_PRESENT.store(true, Ordering::Relaxed);
+    outb(SERIAL + 1, 0x00); // UART interrupt enable = off while configuring.
     outb(SERIAL + 3, 0x80); // Access baud divisor.
     outb(SERIAL, 0x01); outb(SERIAL + 1, 0x00); // 115200 baud.
     outb(SERIAL + 3, 0x03); // 8 data bits, no parity, one stop bit.
     outb(SERIAL + 2, 0xc7); // FIFO enable/reset.
-    outb(SERIAL + 4, 0x03); // DTR + RTS.
+    outb(SERIAL + 4, 0x0b); // DTR + RTS + OUT2, which gates IRQ 4 on PCs.
+    outb(SERIAL + 1, 0x01); // IRQ on received data, so HLT wakes for input.
 }
 
 unsafe fn serial_write(byte: u8) {
+    if !SERIAL_PRESENT.load(Ordering::Relaxed) { return; }
     // Bound the wait so a missing UART does not hang the VGA console.
     for _ in 0..100_000 {
         if inb(SERIAL + 5) & 0x20 != 0 { outb(SERIAL, byte); return; }
     }
 }
 
-unsafe fn serial_read() -> Option<u8> {
-    if inb(SERIAL + 5) & 1 != 0 { Some(inb(SERIAL)) } else { None }
+unsafe fn serial_ready() -> bool {
+    SERIAL_PRESENT.load(Ordering::Relaxed) && inb(SERIAL + 5) & 1 != 0
 }
 
-fn halt() -> ! {
+unsafe fn serial_read() -> Option<u8> {
+    if serial_ready() { Some(inb(SERIAL)) } else { None }
+}
+
+pub(crate) fn halt() -> ! {
     loop { unsafe { asm!("cli", "hlt", options(nomem, nostack)); } }
 }
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    let mut console = Console::new();
-    console.color = 0x0c;
-    writeln!(console, "\nKERNEL PANIC: {}", info).ok();
+    interrupts::disable();
+    console().color = 0x0c;
+    kprintln!("\nKERNEL PANIC: {}", info);
     halt()
 }
 

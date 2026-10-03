@@ -8,11 +8,29 @@ pub enum Action<'a> {
     Clear,
     Halt,
     Reboot,
+    Uptime,
     Echo(&'a str),
     Calc(Result<i64, &'static str>),
+    Sleep(Result<u64, &'static str>),
+    Fault(Result<Fault, &'static str>),
     Empty,
     Unknown,
 }
+
+/// CPU exceptions that `fault` deliberately raises to exercise the IDT.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum Fault {
+    Breakpoint,
+    DivideError,
+    InvalidOpcode,
+    GeneralProtection,
+    PageFault,
+    DoubleFault,
+}
+
+pub const MAX_SLEEP_MS: u64 = 60_000;
+const FAULT_USAGE: &str = "usage: fault bp|de|ud|gp|pf|df";
+const SLEEP_USAGE: &str = "usage: sleep MS (0-60000)";
 
 /// Trim the command line's outer ASCII whitespace. `echo` consumes one
 /// separator after its name, preserving all remaining spaces inside the line.
@@ -31,14 +49,36 @@ pub fn parse(line: &str) -> Action<'_> {
     match command {
         "echo" => Action::Echo(text),
         "calc" => Action::Calc(calculate(text)),
+        "sleep" => Action::Sleep(sleep(text)),
+        "fault" => Action::Fault(fault(text)),
         _ if !text.is_empty() => Action::Unknown,
         "help" => Action::Help,
         "about" => Action::About,
         "mem" => Action::Memory,
+        "uptime" => Action::Uptime,
         "clear" => Action::Clear,
         "halt" => Action::Halt,
         "reboot" => Action::Reboot,
         _ => Action::Unknown,
+    }
+}
+
+fn sleep(text: &str) -> Result<u64, &'static str> {
+    match text.trim_ascii().parse::<u64>() {
+        Ok(ms) if ms <= MAX_SLEEP_MS && text.trim_ascii().bytes().all(|b| b.is_ascii_digit()) => Ok(ms),
+        _ => Err(SLEEP_USAGE),
+    }
+}
+
+fn fault(text: &str) -> Result<Fault, &'static str> {
+    match text.trim_ascii() {
+        "bp" => Ok(Fault::Breakpoint),
+        "de" => Ok(Fault::DivideError),
+        "ud" => Ok(Fault::InvalidOpcode),
+        "gp" => Ok(Fault::GeneralProtection),
+        "pf" => Ok(Fault::PageFault),
+        "df" => Ok(Fault::DoubleFault),
+        _ => Err(FAULT_USAGE),
     }
 }
 
@@ -66,7 +106,7 @@ fn calculate(text: &str) -> Result<i64, &'static str> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse, Action};
+    use super::{parse, Action, Fault};
 
     #[test]
     fn exact_commands_and_outer_whitespace() {
@@ -77,6 +117,7 @@ mod tests {
             ("clear", Action::Clear),
             ("halt", Action::Halt),
             ("reboot", Action::Reboot),
+            ("uptime", Action::Uptime),
         ] {
             assert_eq!(parse(line), expected);
         }
@@ -88,6 +129,7 @@ mod tests {
         assert_eq!(parse(" \t\r\n"), Action::Empty);
         assert_eq!(parse("HELP"), Action::Unknown);
         assert_eq!(parse("mem extra"), Action::Unknown);
+        assert_eq!(parse("uptime now"), Action::Unknown);
         assert_eq!(parse("echoes"), Action::Unknown);
         assert_eq!(parse("\u{2003}"), Action::Unknown);
     }
@@ -136,5 +178,32 @@ mod tests {
             assert_eq!(parse(line), Action::Calc(Err("invalid i64 integer")));
         }
         assert_eq!(parse("calc 1 % 2"), Action::Calc(Err("operator must be +, -, *, or /")));
+    }
+
+    #[test]
+    fn sleep_accepts_bounded_milliseconds() {
+        assert_eq!(parse("sleep 0"), Action::Sleep(Ok(0)));
+        assert_eq!(parse("sleep  250 "), Action::Sleep(Ok(250)));
+        assert_eq!(parse("sleep 60000"), Action::Sleep(Ok(60_000)));
+        for line in ["sleep", "sleep 60001", "sleep -1", "sleep +5", "sleep 1 2", "sleep x"] {
+            assert_eq!(parse(line), Action::Sleep(Err("usage: sleep MS (0-60000)")));
+        }
+    }
+
+    #[test]
+    fn fault_names_select_one_exception() {
+        for (line, expected) in [
+            ("fault bp", Fault::Breakpoint),
+            ("fault de", Fault::DivideError),
+            ("fault ud", Fault::InvalidOpcode),
+            ("fault gp", Fault::GeneralProtection),
+            ("fault pf", Fault::PageFault),
+            ("fault  df ", Fault::DoubleFault),
+        ] {
+            assert_eq!(parse(line), Action::Fault(Ok(expected)));
+        }
+        for line in ["fault", "fault PF", "fault pf gp", "fault nmi"] {
+            assert_eq!(parse(line), Action::Fault(Err("usage: fault bp|de|ud|gp|pf|df")));
+        }
     }
 }

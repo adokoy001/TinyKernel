@@ -4,3 +4,5 @@ build/*.a
 build/*.map
 build/boot.elf
 build/shell-tests
+build/*.stderr
+build/*.ppm

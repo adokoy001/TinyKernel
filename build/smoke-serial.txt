@@ -2,28 +2,32 @@
 --- QEMU main ---
 TANE OS / RUST BARE METAL
 Self-made BIOS loader + Rust kernel. External crates: 0.
-64-bit mode | VGA + COM1 | polling keyboard | no heap
+64-bit mode | VGA + COM1 | PS/2 keyboard | no heap
+IDT: 32 exception handlers, #DF on IST1 | PIT timer 100 Hz
 Type help. English keyboard / ASCII input.
 READY
 tane> help
 help          Show commands
 about         Describe this kernel
 mem           Show the fixed memory layout
+uptime        Time since boot, counted by timer interrupts
 echo TEXT     Print text
 calc A OP B   Integer + - * / (example: calc 12 * 3)
+sleep MS      Wait MS milliseconds (0-60000) with HLT
+fault KIND    Raise a CPU exception: bp de ud gp pf df
 clear         Clear the screen
 reboot        Restart the virtual machine
 halt          Stop the CPU (close QEMU to exit)
 tane> about
-Tane OS 0.1 - a small original Rust kernel.
+Tane OS 0.2 - a small original Rust kernel.
 No Linux code, GRUB, external crates, libc, or host OS calls.
 Firmware loads our 512-byte boot sector; it loads this kernel.
-One task, ring 0, fixed memory, interrupts disabled.
-No process isolation, filesystem, network, or exception handlers.
+One task, ring 0, fixed memory, own GDT/TSS/IDT, PIT at 100 Hz.
+CPU exceptions print registers; no process isolation, filesystem, or network.
 tane> mem
 Page tables: 0x1000..0x4000
 Boot sector: 0x7c00..0x7e00
-Kernel:      0x10000..0x15930 (22832 bytes incl. BSS)
+Kernel:      0x10000..0x1cd10 (52496 bytes incl. BSS)
 Stack range: 0x80000..0x90000 (grows down)
 VGA text:    0xb8000
 First 1 GiB identity mapped; this is NOT detected RAM size.
@@ -53,6 +57,30 @@ tane> echo baX ck
 back
 tane> echo crlf
 crlf
+tane> uptime
+up 0.52 s (52 timer ticks at 100 Hz)
+tane> sleep 500
+slept 500 ms
+tane> uptime
+up 1.05 s (105 timer ticks at 100 Hz)
+tane> sleep 60001
+error: usage: sleep MS (0-60000)
+tane> fault bp
+
+CPU EXCEPTION 3 #BP: Breakpoint
+rip=0000000000010a44 cs=0008 rflags=0000000000000246
+rsp=000000000008fe90 ss=0010
+rax=0000000000000000 rbx=0000000000000000 rcx=0000000000000002
+rdx=000000000008ff70 rsi=0000000000000002 rdi=000000000008ff28
+rbp=0000000000000000 r8 =0000000000000000 r9 =000000000000000a
+r10=0000000000000000 r11=000000000008ff4e r12=0000000000000001
+r13=0000000000000001 r14=0000000000000000 r15=0000000000000000
+Breakpoint handled; resuming.
+returned to the shell after the exception
+tane> echo after breakpoint
+after breakpoint
+tane> fault nmi
+error: usage: fault bp|de|ud|gp|pf|df
 tane> echo XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 tane> echo recovered
@@ -123,17 +151,20 @@ tane> echo A!
 A!
 tane> clear
 [2J[Htane> about
-Tane OS 0.1 - a small original Rust kernel.
+Tane OS 0.2 - a small original Rust kernel.
 No Linux code, GRUB, external crates, libc, or host OS calls.
 Firmware loads our 512-byte boot sector; it loads this kernel.
-One task, ring 0, fixed memory, interrupts disabled.
-No process isolation, filesystem, network, or exception handlers.
+One task, ring 0, fixed memory, own GDT/TSS/IDT, PIT at 100 Hz.
+CPU exceptions print registers; no process isolation, filesystem, or network.
 tane> help
 help          Show commands
 about         Describe this kernel
 mem           Show the fixed memory layout
+uptime        Time since boot, counted by timer interrupts
 echo TEXT     Print text
 calc A OP B   Integer + - * / (example: calc 12 * 3)
+sleep MS      Wait MS milliseconds (0-60000) with HLT
+fault KIND    Raise a CPU exception: bp de ud gp pf df
 clear         Clear the screen
 reboot        Restart the virtual machine
 halt          Stop the CPU (close QEMU to exit)
@@ -147,16 +178,117 @@ HALTED
 --- QEMU reboot ---
 TANE OS / RUST BARE METAL
 Self-made BIOS loader + Rust kernel. External crates: 0.
-64-bit mode | VGA + COM1 | polling keyboard | no heap
+64-bit mode | VGA + COM1 | PS/2 keyboard | no heap
+IDT: 32 exception handlers, #DF on IST1 | PIT timer 100 Hz
 Type help. English keyboard / ASCII input.
 READY
 tane> reboot
 REBOOTING
 TANE OS / RUST BARE METAL
 Self-made BIOS loader + Rust kernel. External crates: 0.
-64-bit mode | VGA + COM1 | polling keyboard | no heap
+64-bit mode | VGA + COM1 | PS/2 keyboard | no heap
+IDT: 32 exception handlers, #DF on IST1 | PIT timer 100 Hz
 Type help. English keyboard / ASCII input.
 READY
 tane> echo restarted
 restarted
 tane> 
+--- QEMU fault-de ---
+TANE OS / RUST BARE METAL
+Self-made BIOS loader + Rust kernel. External crates: 0.
+64-bit mode | VGA + COM1 | PS/2 keyboard | no heap
+IDT: 32 exception handlers, #DF on IST1 | PIT timer 100 Hz
+Type help. English keyboard / ASCII input.
+READY
+tane> fault de
+
+CPU EXCEPTION 0 #DE: Divide error
+rip=0000000000010f24 cs=0008 rflags=0000000000000246
+rsp=000000000008fe90 ss=0010
+rax=0000000000000001 rbx=0000000000000000 rcx=0000000000000002
+rdx=0000000000000000 rsi=0000000000000002 rdi=000000000008ff28
+rbp=0000000000000000 r8 =0000000000000001 r9 =000000000000000a
+r10=0000000000000000 r11=000000000008ff4e r12=000000000008ff01
+r13=0000000000000001 r14=0000000000000000 r15=0000000000000000
+HALTED
+
+--- QEMU fault-ud ---
+TANE OS / RUST BARE METAL
+Self-made BIOS loader + Rust kernel. External crates: 0.
+64-bit mode | VGA + COM1 | PS/2 keyboard | no heap
+IDT: 32 exception handlers, #DF on IST1 | PIT timer 100 Hz
+Type help. English keyboard / ASCII input.
+READY
+tane> fault ud
+
+CPU EXCEPTION 6 #UD: Invalid opcode
+rip=0000000000010f0a cs=0008 rflags=0000000000000246
+rsp=000000000008fe90 ss=0010
+rax=0000000000000002 rbx=0000000000000000 rcx=0000000000000002
+rdx=000000000008ff64 rsi=0000000000000002 rdi=000000000008ff28
+rbp=0000000000000000 r8 =0000000000000002 r9 =000000000000000a
+r10=0000000000000000 r11=000000000008ff4e r12=000000000008ff01
+r13=0000000000000001 r14=0000000000000000 r15=0000000000000000
+HALTED
+
+--- QEMU fault-gp ---
+TANE OS / RUST BARE METAL
+Self-made BIOS loader + Rust kernel. External crates: 0.
+64-bit mode | VGA + COM1 | PS/2 keyboard | no heap
+IDT: 32 exception handlers, #DF on IST1 | PIT timer 100 Hz
+Type help. English keyboard / ASCII input.
+READY
+tane> fault gp
+
+CPU EXCEPTION 13 #GP: General protection fault
+error=0x0
+rip=0000000000010f18 cs=0008 rflags=0000000000000246
+rsp=000000000008fe90 ss=0010
+rax=8000000000000000 rbx=0000000000000000 rcx=0000000000000002
+rdx=000000000008ff70 rsi=0000000000000002 rdi=000000000008ff28
+rbp=0000000000000000 r8 =0000000000000003 r9 =000000000000000a
+r10=0000000000000000 r11=000000000008ff4e r12=000000000008ff01
+r13=0000000000000001 r14=0000000000000000 r15=0000000000000000
+HALTED
+
+--- QEMU fault-pf ---
+TANE OS / RUST BARE METAL
+Self-made BIOS loader + Rust kernel. External crates: 0.
+64-bit mode | VGA + COM1 | PS/2 keyboard | no heap
+IDT: 32 exception handlers, #DF on IST1 | PIT timer 100 Hz
+Type help. English keyboard / ASCII input.
+READY
+tane> fault pf
+
+CPU EXCEPTION 14 #PF: Page fault
+error=0x0 (not-present read) cr2=0x0000000040000000
+rip=0000000000010f05 cs=0008 rflags=0000000000000246
+rsp=000000000008fe90 ss=0010
+rax=0000000040000000 rbx=0000000000000000 rcx=0000000000000002
+rdx=000000000008ff66 rsi=0000000000000002 rdi=000000000008ff28
+rbp=0000000000000000 r8 =0000000000000004 r9 =000000000000000a
+r10=0000000000000000 r11=000000000008ff4e r12=000000000008ff01
+r13=0000000000000001 r14=0000000000000000 r15=0000000000000000
+HALTED
+
+--- QEMU fault-df ---
+TANE OS / RUST BARE METAL
+Self-made BIOS loader + Rust kernel. External crates: 0.
+64-bit mode | VGA + COM1 | PS/2 keyboard | no heap
+IDT: 32 exception handlers, #DF on IST1 | PIT timer 100 Hz
+Type help. English keyboard / ASCII input.
+READY
+tane> fault df
+
+CPU EXCEPTION 8 #DF: Double fault
+error=0x0
+rip=0000000000011077 cs=0008 rflags=0000000000000246
+rsp=0000000040001000 ss=0010
+rax=0000000040001000 rbx=0000000000000000 rcx=0000000000000002
+rdx=000000000008ff66 rsi=0000000000000002 rdi=000000000008ff28
+rbp=0000000000000000 r8 =0000000000000005 r9 =000000000000000a
+r10=0000000000000000 r11=000000000008ff4e r12=000000000008ff01
+r13=0000000000000001 r14=0000000000000000 r15=0000000000000000
+HALTED
+
+--- QEMU vga-only ---

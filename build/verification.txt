@@ -1,16 +1,22 @@
-Tane OS verification — 2026 10 02
+Tane OS verification — 2026 10 03 (0.2: IDT, exceptions, PIT timer)
 
 Compiler: rustc 1.90.0
+Binutils: GNU as / ld 2.42
 Emulator: QEMU 8.2.2, PC BIOS, TCG, 64 MiB RAM
 
-Host shell tests: 6 passed, 0 failed.
-QEMU integration checks: 11 passed, 0 failed.
+Host shell tests: 8 passed, 0 failed.
+QEMU integration checks: 16 passed, 0 failed (Unix socket and pipe transports).
 Boot: exactly 512 bytes, ending 55 AA.
 Kernel entry: 0x10000, ELF64 x86-64.
-Flat kernel: 22832 bytes, below 32768 byte boot load budget.
+Flat kernel: 31888 bytes, below 65536 byte boot load budget.
 Unresolved ELF symbols: none.
 Two full builds produced identical disk images.
-SHA256: dd034732cc729b74e15c3aa28f300db00c06067baf5e2298e281b742af725af6
+SHA256: efd95e2623f0fd8b3d8c1fd5d4ee87229c3e6a5f26d56becdd484a8b6befa116
+
+Exceptions checked in QEMU: #BP resumes; #DE, #UD, #GP, #PF, #DF report and halt.
+#DF is raised with RSP unmapped and is handled on IST1 without a triple fault.
+Without COM1 (-serial none, as run.sh's window mode), PS/2 input reaches the shell.
+Idle host CPU of QEMU over 5 s: 0.1 version ~100%, 0.2 ~2% (HLT between interrupts).
 
 Only QEMU BIOS execution was tested; physical hardware and UEFI were not tested.
 See smoke-summary.txt and smoke-serial.txt for integration evidence.

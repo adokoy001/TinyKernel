@@ -19,12 +19,13 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "build"
 PROMPT = b"tane> "
-TIME_LIMIT = 30.0
+TIME_LIMIT = 60.0
 
 
 class Machine:
-    def __init__(self, name, deadline):
+    def __init__(self, name, deadline, serial=True):
         self.name = name
+        self.with_serial = serial
         self.deadline = deadline
         self.output = bytearray()
         self.process = None
@@ -44,7 +45,7 @@ class Machine:
     def remaining(self, limit=3.0):
         remaining = self.deadline - time.monotonic()
         if remaining <= 0:
-            raise AssertionError("Integration test exceeded its 30 second deadline")
+            raise AssertionError(f"Integration test exceeded its {TIME_LIMIT:.0f} second deadline")
         return min(limit, remaining)
 
     def connect(self, path):
@@ -90,9 +91,9 @@ class Machine:
             self.qmp_write_fd = os.open(str(qmp_path) + ".in", os.O_RDWR | os.O_NONBLOCK)
             self.qmp_read_fd = os.open(str(qmp_path) + ".out", os.O_RDWR | os.O_NONBLOCK)
             self.pipe_fds = [self.qmp_write_fd, self.qmp_read_fd]
-            command += ["-serial", "stdio", "-qmp", f"pipe:{qmp_path}"]
+            command += ["-serial", "stdio" if self.with_serial else "none", "-qmp", f"pipe:{qmp_path}"]
         else:
-            command += ["-serial", f"unix:{serial_path},server=on,wait=off",
+            command += ["-serial", f"unix:{serial_path},server=on,wait=off" if self.with_serial else "none",
                         "-qmp", f"unix:{qmp_path},server=on,wait=off"]
         self.stderr = (OUT / f"smoke-qemu-{self.name}.stderr").open("wb")
         self.process = subprocess.Popen(command, cwd=ROOT,
@@ -104,9 +105,10 @@ class Machine:
             self.serial_write_fd = self.process.stdin.fileno()
             os.set_blocking(self.serial_read_fd, False)
         else:
-            self.serial = self.connect(serial_path)
-            self.serial.setblocking(False)
-            self.serial_read_fd = self.serial_write_fd = self.serial.fileno()
+            if self.with_serial:
+                self.serial = self.connect(serial_path)
+                self.serial.setblocking(False)
+                self.serial_read_fd = self.serial_write_fd = self.serial.fileno()
             self.qmp = self.connect(qmp_path)
             self.qmp.setblocking(False)
             self.qmp_read_fd = self.qmp_write_fd = self.qmp.fileno()
@@ -114,9 +116,30 @@ class Machine:
         if "QMP" not in greeting:
             raise AssertionError("Missing QMP greeting")
         self.monitor("qmp_capabilities")
+        if not self.with_serial:
+            self.wait_for_screen(b"READY", timeout=6.0)
+            return self
         self.wait_for(b"READY\r\n", timeout=6.0)
         self.wait_for(PROMPT, timeout=2.0)
         return self
+
+    def screen(self):
+        """Read the 80x25 VGA text buffer from guest memory as text lines."""
+        dump = Path(self.temporary.name) / "vga.bin"
+        self.monitor("pmemsave", {"val": 0xb8000, "size": 80 * 25 * 2, "filename": str(dump)})
+        cells = dump.read_bytes()[::2]
+        return [cells[row * 80:(row + 1) * 80].rstrip() for row in range(25)]
+
+    def wait_for_screen(self, expected, timeout=3.0):
+        stop = time.monotonic() + self.remaining(timeout)
+        while True:
+            lines = self.screen()
+            if expected in lines:
+                return lines
+            if time.monotonic() >= stop:
+                text = b"\n".join(lines).decode("ascii", errors="backslashreplace")
+                raise AssertionError(f"Timed out waiting for {expected!r} on VGA:\n{text}")
+            time.sleep(0.05)
 
     def drain(self, timeout=0.0):
         self.ensure_alive()
@@ -226,6 +249,23 @@ class Machine:
         self.temporary.cleanup()
 
 
+def fatal_fault(kind, deadline, machines, expected):
+    machine = Machine(f"fault-{kind}", deadline)
+    machines.append(machine)
+    machine.start()
+    start = len(machine.output)
+    machine.send(f"fault {kind}\r".encode("ascii"))
+    result = machine.wait_for(b"HALTED\r\n", start=start)
+    for text in expected:
+        contains(result, text)
+    for register in (b"rip=", b"rsp=", b"rax=", b"r15="):
+        contains(result, register)
+    machine.drain(0.1)
+    if PROMPT in machine.output[start:]:
+        raise AssertionError(f"fault {kind} returned to the command loop")
+    machine.close()
+
+
 def contains(result, expected):
     if expected not in result:
         raise AssertionError(f"Missing {expected!r} in command response {result!r}")
@@ -251,8 +291,12 @@ def main():
         machine.start()
         checked("BIOS floppy boots into the Rust shell")
 
+        result = machine.output
+        contains(result, b"IDT: 32 exception handlers, #DF on IST1 | PIT timer 100 Hz")
+        if b"COM1 not detected" in result:
+            raise AssertionError("COM1 was not detected although QEMU provides it")
         contains(machine.command(b"help\r"), b"calc A OP B")
-        contains(machine.command(b"about\r"), b"No process isolation, filesystem, network, or exception handlers.")
+        contains(machine.command(b"about\r"), b"CPU exceptions print registers; no process isolation, filesystem, or network.")
         result = machine.command(b"mem\r")
         contains(result, b"First 1 GiB identity mapped; this is NOT detected RAM size.")
         contains(result, b"Command buffer: 128 bytes (max 127 input).")
@@ -284,6 +328,31 @@ def main():
         if result.count(PROMPT) != 1:
             raise AssertionError("CRLF executed more than one command")
         checked("unknown/empty commands, both backspaces and CRLF work")
+
+        def uptime_ticks():
+            result = machine.command(b"uptime\r")
+            contains(result, b" timer ticks at 100 Hz)")
+            return int(result.split(b"(")[1].split(b" ")[0])
+
+        first = uptime_ticks()
+        began = time.monotonic()
+        contains(machine.command(b"sleep 500\r"), b"\r\nslept 500 ms\r\n")
+        waited = time.monotonic() - began
+        second = uptime_ticks()
+        if waited < 0.45:
+            raise AssertionError(f"sleep 500 returned after only {waited:.3f}s")
+        if second - first < 50:
+            raise AssertionError(f"Timer advanced {second - first} ticks across sleep 500")
+        contains(machine.command(b"sleep 60001\r"), b"error: usage: sleep MS (0-60000)")
+        checked("PIT timer interrupts drive uptime and sleep")
+
+        result = machine.command(b"fault bp\r")
+        for text in (b"CPU EXCEPTION 3 #BP: Breakpoint", b"Breakpoint handled; resuming.",
+                     b"returned to the shell after the exception"):
+            contains(result, text)
+        contains(machine.command(b"echo after breakpoint\r"), b"\r\nafter breakpoint\r\n")
+        contains(machine.command(b"fault nmi\r"), b"error: usage: fault bp|de|ud|gp|pf|df")
+        checked("#BP is reported and execution resumes")
 
         result = machine.command(b"echo " + b"X" * 160 + b"\r")
         contains(result, b"\r\n" + b"X" * 122 + b"\r\n")
@@ -336,6 +405,31 @@ def main():
             raise AssertionError("Reboot did not produce exactly a second boot banner")
         contains(reboot.command(b"echo restarted\r"), b"\r\nrestarted\r\n")
         checked("8042 reboot boots again and accepts a fresh command")
+        reboot.close()
+
+        fatal_fault("de", deadline, machines, [b"CPU EXCEPTION 0 #DE: Divide error"])
+        fatal_fault("ud", deadline, machines, [b"CPU EXCEPTION 6 #UD: Invalid opcode"])
+        fatal_fault("gp", deadline, machines, [b"CPU EXCEPTION 13 #GP: General protection fault", b"error=0x0\r\n",
+                                               b"rax=8000000000000000"])
+        fatal_fault("pf", deadline, machines, [b"CPU EXCEPTION 14 #PF: Page fault",
+                                               b"error=0x0 (not-present read) cr2=0x0000000040000000"])
+        checked("#DE/#UD/#GP/#PF print diagnostics and halt")
+        # A #DF handler on the faulting stack would triple fault and reboot.
+        fatal_fault("df", deadline, machines, [b"CPU EXCEPTION 8 #DF: Double fault", b"rsp=0000000040001000"])
+        checked("#DF runs on its IST stack after an unmapped RSP")
+
+        vga = Machine("vga-only", deadline, serial=False)
+        machines.append(vga)
+        vga.start()
+        if b"COM1 not detected; VGA and keyboard only." not in vga.screen():
+            raise AssertionError("Missing COM1 absence notice on VGA")
+        for key in ["e", "c", "h", "o", "spc", "n", "o", "spc", "c", "o", "m", "1", "ret"]:
+            vga.monitor("human-monitor-command", {"command-line": f"sendkey {key} 20"})
+            time.sleep(0.04)
+        lines = vga.wait_for_screen(b"no com1")
+        if lines[lines.index(b"no com1") + 1] != b"tane>":
+            raise AssertionError("No prompt after keyboard command without COM1")
+        checked("keyboard works when the machine has no COM1 (run.sh default)")
     except Exception as error:
         failure = str(error)
     finally:
