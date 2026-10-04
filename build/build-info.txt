@@ -2,6 +2,6 @@ Tane OS build
 rustc 1.90.0 (1159e78c4 2025-09-14)
 Target: x86_64-unknown-none
 Boot: 512 bytes
-Kernel: 251216 bytes
+Kernel: 311288 bytes
 Image: 1474560 bytes
-SHA256: a7841ab2dc5c14c3527ce8bac156fe299dd74ffd350871054a6857e1affb757e
+SHA256: 442b5de5aff35c58997d84a2ad973382462947e7b7354c189964c74d89ab320a

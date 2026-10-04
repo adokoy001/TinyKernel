@@ -103,6 +103,7 @@ fn source_allowed(operation: O) -> bool {
     matches!(operation, O::About | O::Status | O::Memory | O::Uptime | O::Tasks | O::Security |
         O::Resources | O::Audit | O::Disk | O::Network | O::Ping | O::List | O::Cat |
         O::Echo | O::Calc | O::Ops | O::Vars | O::History)
+        || matches!(operation, O::ProcessPrograms | O::ProcessList | O::ProcessOutput)
 }
 
 const TEXT_SCHEMA: &[Column] = &[Column::new("text", Kind::Text)];
@@ -110,7 +111,7 @@ const NUMBER_SCHEMA: &[Column] = &[Column::new("value", Kind::Int)];
 const UPTIME_SCHEMA: &[Column] = &[Column::new("milliseconds", Kind::UInt), Column::new("ticks", Kind::UInt)];
 const STATUS_SCHEMA: &[Column] = &[Column::new("code", Kind::Text), Column::new("operation", Kind::Text), Column::new("message", Kind::Text)];
 const MEMORY_SCHEMA: &[Column] = &[Column::new("usable", Kind::UInt), Column::new("free", Kind::UInt), Column::new("used", Kind::UInt), Column::new("frame_bytes", Kind::UInt)];
-const TASK_SCHEMA: &[Column] = &[Column::new("pid", Kind::UInt), Column::new("name", Kind::Text), Column::new("domain", Kind::Text), Column::new("state", Kind::Text), Column::new("cpu_ticks", Kind::UInt), Column::new("counter", Kind::UInt), Column::new("stack", Kind::UInt)];
+const TASK_SCHEMA: &[Column] = &[Column::new("pid", Kind::UInt), Column::new("name", Kind::Text), Column::new("domain", Kind::Text), Column::new("state", Kind::Text), Column::new("cpu_ticks", Kind::UInt), Column::new("counter", Kind::UInt), Column::new("stack", Kind::UInt), Column::new("mode", Kind::Text)];
 const FILE_SCHEMA: &[Column] = &[Column::new("slot", Kind::UInt), Column::new("label", Kind::Text), Column::new("bytes", Kind::UInt), Column::new("generation", Kind::UInt), Column::new("name", Kind::Text)];
 const NETWORK_SCHEMA: &[Column] = &[Column::new("available", Kind::Bool), Column::new("mac", Kind::Text), Column::new("ipv4", Kind::Text), Column::new("ipv6", Kind::Text), Column::new("rx", Kind::UInt), Column::new("tx", Kind::UInt), Column::new("dropped", Kind::UInt), Column::new("neighbors", Kind::UInt)];
 const PING_SCHEMA: &[Column] = &[Column::new("kind", Kind::Text), Column::new("source", Kind::Text), Column::new("sequence", Kind::UInt), Column::new("bytes", Kind::UInt), Column::new("ttl", Kind::UInt), Column::new("rtt_ms", Kind::UInt), Column::new("sent", Kind::UInt), Column::new("received", Kind::UInt)];
@@ -121,15 +122,18 @@ const DISK_SCHEMA: &[Column] = &[Column::new("available", Kind::Bool), Column::n
 const OPS_SCHEMA: &[Column] = &[Column::new("name", Kind::Text), Column::new("effect", Kind::Text), Column::new("result", Kind::Text), Column::new("permission", Kind::Text)];
 const VAR_SCHEMA: &[Column] = &[Column::new("name", Kind::Text), Column::new("value", Kind::Text)];
 const HISTORY_SCHEMA: &[Column] = &[Column::new("id", Kind::UInt), Column::new("part", Kind::UInt), Column::new("command", Kind::Text)];
+const PROGRAM_SCHEMA: &[Column] = &[Column::new("name", Kind::Text), Column::new("bytes", Kind::UInt)];
+const PROCESS_SCHEMA: &[Column] = &[Column::new("pid", Kind::UInt), Column::new("parent", Kind::UInt), Column::new("name", Kind::Text), Column::new("domain", Kind::Text), Column::new("state", Kind::Text), Column::new("cpu_ticks", Kind::UInt), Column::new("frames", Kind::UInt), Column::new("output_bytes", Kind::UInt)];
 
 fn schema(operation: O) -> &'static [Column] {
     match operation {
-        O::About | O::Cat | O::Echo => TEXT_SCHEMA, O::Calc => NUMBER_SCHEMA,
+        O::About | O::Cat | O::Echo | O::ProcessOutput => TEXT_SCHEMA, O::Calc => NUMBER_SCHEMA,
         O::Uptime => UPTIME_SCHEMA, O::Status => STATUS_SCHEMA, O::Memory => MEMORY_SCHEMA,
         O::Tasks => TASK_SCHEMA, O::List => FILE_SCHEMA, O::Network => NETWORK_SCHEMA,
         O::Ping => PING_SCHEMA, O::Security => SECURITY_SCHEMA, O::Resources => RESOURCE_SCHEMA,
         O::Audit => AUDIT_SCHEMA, O::Disk => DISK_SCHEMA, O::Ops => OPS_SCHEMA,
-        O::Vars => VAR_SCHEMA, O::History => HISTORY_SCHEMA, _ => &[],
+        O::Vars => VAR_SCHEMA, O::History => HISTORY_SCHEMA,
+        O::ProcessPrograms => PROGRAM_SCHEMA, O::ProcessList => PROCESS_SCHEMA, _ => &[],
     }
 }
 
@@ -306,6 +310,28 @@ fn validate(operation: O, arguments: &[&str]) -> Result<(), &'static str> {
             if let Some(id) = arguments.first() { unsigned(id)?; }
             Ok(())
         }
+        O::ProcessRun | O::ProcessExec => {
+            if arguments.is_empty() || arguments.len() > 2 { return Err(usage); }
+            if operation == O::ProcessRun && crate::user_images::builtin(arguments[0]).is_none() {
+                return Err("unknown builtin user program");
+            }
+            if operation == O::ProcessExec { file_name(arguments[0])?; }
+            if arguments.get(1).map_or(false, |value| value.len() > crate::executable::ARGS_MAX) {
+                return Err("process arguments exceed 128 bytes");
+            }
+            Ok(())
+        }
+        O::ProcessInstall => {
+            exact(arguments, 2, usage)?;
+            if crate::user_images::builtin(arguments[0]).is_none() { return Err("unknown builtin user program"); }
+            file_name(arguments[1])
+        }
+        O::ProcessWait | O::ProcessOutput => {
+            exact(arguments, 1, usage)?;
+            let pid = unsigned(arguments[0])?;
+            if pid == 0 || pid > u32::MAX as u64 { return Err("invalid process PID"); }
+            Ok(())
+        }
         O::Plan => {
             if arguments.is_empty() { return Ok(()); }
             let target = operations::resolve(arguments[0], arguments.get(1).copied()).ok_or("plan requires file write, append or remove")?;
@@ -416,6 +442,8 @@ fn joined<'a>(arguments: &[&str], buffer: &'a mut Buffer<512>) -> Result<&'a str
 fn single(operation: O, arguments: &[&str], raw: &str, resolved: Resolved,
     keyboard: &mut Keyboard, editor: &mut Editor) -> ExecState {
     match operation {
+        O::ProcessPrograms | O::ProcessList | O::ProcessRun | O::ProcessExec | O::ProcessInstall | O::ProcessWait | O::ProcessOutput =>
+            return crate::execute_process(operation, arguments, keyboard),
         O::Help => { help(arguments); return ExecState::Success; }
         O::Status => {
             let value = last();
@@ -541,7 +569,7 @@ fn source(operation: O, arguments: &[&str], keyboard: &mut Keyboard, editor: &Ed
             tasks::list(|task| {
                 if result.is_ok() {
                     result = (|| { table().push_row(&[Cell::UInt(task.pid as u64), text(task.name)?, text(task.domain.name())?, text(task.state)?,
-                        Cell::UInt(task.cpu_ticks), task.counter.map(Cell::UInt).unwrap_or(Cell::Null), Cell::UInt(task.stack)]) })();
+                        Cell::UInt(task.cpu_ticks), task.counter.map(Cell::UInt).unwrap_or(Cell::Null), Cell::UInt(task.stack), text(if task.user { "user" } else { "kernel" })?]) })();
                 }
             });
             result
@@ -587,15 +615,15 @@ fn source(operation: O, arguments: &[&str], keyboard: &mut Keyboard, editor: &Ed
                 if result.is_ok() {
                     result = (|| { table().push_row(&[Cell::UInt(id), Cell::UInt(record.tick), Cell::UInt(record.pid as u64), text(record.subject.name())?, text(record.op.name())?,
                         match record.object { Some(domain) => text(domain.name())?, None => Cell::Null }, record.target.map(Cell::UInt).unwrap_or(Cell::Null),
-                        text(match record.reason { mac::Reason::Policy => "policy", mac::Reason::Quota => "quota" })?]) })();
+                        text(match record.reason { mac::Reason::Policy => "policy", mac::Reason::Quota => "quota", mac::Reason::Capability => "capability" })?]) })();
                 }
             });
             result
         }
         O::Disk => (|| { match storage::status() {
             storage::Status::Absent => table().push_row(&[Cell::Bool(false), Cell::Bool(false), Cell::Null, Cell::Null, Cell::Null, text("no disk")?]),
-            storage::Status::Mounted { model, sectors, files } => table().push_row(&[Cell::Bool(true), Cell::Bool(true), text(model)?, Cell::UInt(sectors as u64), Cell::UInt(files as u64), Cell::Null]),
-            storage::Status::Unformatted { model, sectors, error } => table().push_row(&[Cell::Bool(true), Cell::Bool(false), text(model)?, Cell::UInt(sectors as u64), Cell::Null, text(error.message())?]),
+            storage::Status::Mounted { model, sectors, files } => table().push_row(&[Cell::Bool(true), Cell::Bool(true), text(model.as_str())?, Cell::UInt(sectors as u64), Cell::UInt(files as u64), Cell::Null]),
+            storage::Status::Unformatted { model, sectors, error } => table().push_row(&[Cell::Bool(true), Cell::Bool(false), text(model.as_str())?, Cell::UInt(sectors as u64), Cell::Null, text(error.message())?]),
         } })(),
         O::Ops => (|| {
             for item in &operations::OPERATIONS { table().push_row(&[text(item.name)?, text(item.effect.name())?, text(item.schema.name())?, text(item.permission)?])?; }
@@ -622,6 +650,28 @@ fn source(operation: O, arguments: &[&str], keyboard: &mut Keyboard, editor: &Ed
             }
             Ok(())
         })(),
+        O::ProcessPrograms => (|| {
+            for program in crate::user_images::PROGRAMS { table().push_row(&[text(program.name)?, Cell::UInt(program.bytes.len() as u64)])?; }
+            Ok(())
+        })(),
+        O::ProcessList => {
+            let mut result = Ok(());
+            crate::process::list(|info| {
+                if result.is_ok() { result = (|| { table().push_row(&[Cell::UInt(info.pid as u64), Cell::UInt(info.parent_pid as u64), text(info.name())?,
+                    text(info.domain.name())?, text(info.state)?, Cell::UInt(info.cpu_ticks), Cell::UInt(info.frames as u64), Cell::UInt(info.output_len as u64)]) })(); }
+            });
+            result
+        }
+        O::ProcessOutput => {
+            let pid = arguments[0].parse::<u32>().unwrap_or(0);
+            let mut result = Ok(());
+            if let Err(failure) = crate::process::output(pid, |_, bytes| {
+                let mut output = Buffer::<4096>::new();
+                if crate::escaped_process_output(bytes, &mut output).is_err() { result = Err(records::Error::TextTooLong); }
+                else { result = text_rows(output.text()); }
+            }) { return crate::process_read_error(failure); }
+            result
+        }
         _ => return error("operation is not a record source"),
     };
     result.map(|_| ExecState::Success).unwrap_or_else(record_error)
@@ -714,6 +764,11 @@ pub(crate) fn help(arguments: &[&str]) {
 
 #[inline(never)]
 fn stage_plan(arguments: &[&str]) -> ExecState {
+    interrupts::without(|| stage_plan_locked(arguments))
+}
+
+#[inline(never)]
+fn stage_plan_locked(arguments: &[&str]) -> ExecState {
     let target = match operations::resolve(arguments[0], arguments.get(1).copied()) { Some(target) => target, None => return error("unknown planned operation") };
     let arguments = &arguments[target.argument_offset..];
     let kind = match target.operation { O::Write => PlannedKind::Write, O::Append => PlannedKind::Append, O::Remove => PlannedKind::Remove,
@@ -756,6 +811,13 @@ fn show_plan() -> ExecState {
 
 #[inline(never)]
 fn apply_plan(arguments: &[&str]) -> ExecState {
+    // User processes can mutate TaneFS between timer ticks. Bind the target
+    // observation, revision check, consumption and effect in one transaction.
+    interrupts::without(|| apply_plan_locked(arguments))
+}
+
+#[inline(never)]
+fn apply_plan_locked(arguments: &[&str]) -> ExecState {
     let id = match arguments.first() { Some(value) => unsigned(value).unwrap_or(0), None => plan().id().unwrap_or(0) };
     let domain = tasks::current_domain();
     let mut name = Buffer::<{ fs::MAX_NAME }>::new();

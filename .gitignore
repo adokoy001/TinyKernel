@@ -22,3 +22,9 @@ tests/__pycache__/
 __pycache__/
 build/*-build.log
 build/*-run.txt
+build/*-run.log
+build/users/*.a
+build/users/*.elf
+build/users/*.code
+build/users/*.data
+build/users/*.disassembly

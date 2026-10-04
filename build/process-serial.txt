@@ -1,0 +1,1315 @@
+
+--- QEMU process ---
+TANE OS / RUST BARE METAL
+Self-made BIOS loader + Rust kernel. External crates: 0.
+64-bit mode | VGA + COM1 | PS/2 keyboard | no heap
+RAM: 7 E820 entries | 16056 free 4 KiB frames (64224 KiB) above 1 MiB
+IDT: 32 exception handlers, #DF on IST1 | PIT timer 100 Hz
+Tasks: preemptive round robin, up to 8 tasks
+Protection: NX data | kernel text read-only | null page unmapped | CR0.WP
+MAC: enforcing compiled-in policy | shell domain admin (drop lowers it)
+Disk: ATA found; disk is not formatted (admin: format)
+Network: unavailable (RTL8139 PCI device not found)
+Type help. English keyboard / ASCII input.
+READY
+tane> format
+formatted: empty TaneFS, 32 files of up to 4096 bytes
+tane> proc programs | json
+[{"name":"hello","bytes":544},{"name":"echo","bytes":90},{"name":"busy","bytes":79},{"name":"sleep","bytes":259},{"name":"isolate","bytes":786},{"name":"files","bytes":2227},{"name":"probe","bytes":2541}]
+tane> proc list | json
+[]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc list | json
+[]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run hello
+started user process as pid 2 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 2
+Hello from Rust ring3. pid=2
+process 2 exited status 0 | domain user | cpu 0 ticks
+tane> status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane> proc list | json
+[{"pid":2,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29}]
+tane> proc output 2
+Hello from Rust ring3. pid=2
+tane> proc list | json
+[{"pid":2,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29}]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc output 2
+Hello from Rust ring3. pid=2
+tane> proc list | json
+[{"pid":2,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29}]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run echo "literal | file write injected BAD"
+started user process as pid 3 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 3
+literal | file write injected BAD
+process 3 exited status 0 | domain user | cpu 0 ticks
+tane> status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane> proc list | json
+[{"pid":2,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":3,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34}]
+tane> proc output 3
+literal | file write injected BAD
+tane> proc list | json
+[{"pid":2,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":3,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34}]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> file list | json
+[]
+tane> proc list | json
+[{"pid":2,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":3,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34}]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run echo ""
+started user process as pid 4 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 4
+
+process 4 exited status 0 | domain user | cpu 0 ticks
+tane> status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane> proc list | json
+[{"pid":2,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":3,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":4,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":1}]
+tane> proc output 4
+
+tane> proc list | json
+[{"pid":2,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":3,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":4,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":1}]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc list | json
+[{"pid":2,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":3,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":4,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":1}]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run sleep "30"
+started user process as pid 5 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 5
+sleep: begin
+sleep: awake
+process 5 exited status 0 | domain user | cpu 0 ticks
+tane> status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane> proc list | json
+[{"pid":2,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":3,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":4,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":1},{"pid":5,"parent":1,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26}]
+tane> proc output 5
+sleep: begin
+sleep: awake
+tane> proc list | json
+[{"pid":2,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":3,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":4,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":1},{"pid":5,"parent":1,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26}]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc list | json
+[{"pid":2,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":3,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":4,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":1},{"pid":5,"parent":1,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26}]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run isolate "111111"
+started user process as pid 6 (ring 3, domain user, 12 frames)
+tane> proc run isolate "222222"
+started user process as pid 7 (ring 3, domain user, 12 frames)
+tane> proc list | json
+[{"pid":6,"parent":1,"name":"isolate","domain":"user","state":"ready","cpu_ticks":9,"frames":12,"output_bytes":0},{"pid":7,"parent":1,"name":"isolate","domain":"user","state":"ready","cpu_ticks":0,"frames":12,"output_bytes":0},{"pid":2,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":3,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":4,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":1},{"pid":5,"parent":1,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26}]
+tane> proc wait 6
+isolate: ok seed=111111
+process 6 exited status 0 | domain user | cpu 16 ticks
+tane> status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane> proc list | json
+[{"pid":2,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":3,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":4,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":1},{"pid":5,"parent":1,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":6,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":16,"frames":0,"output_bytes":24},{"pid":7,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":9,"frames":0,"output_bytes":24}]
+tane> proc wait 7
+isolate: ok seed=222222
+process 7 exited status 0 | domain user | cpu 9 ticks
+tane> status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane> proc list | json
+[{"pid":2,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":3,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":4,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":1},{"pid":5,"parent":1,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":6,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":16,"frames":0,"output_bytes":24},{"pid":7,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":9,"frames":0,"output_bytes":24}]
+tane> proc list | json
+[{"pid":2,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":3,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":4,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":1},{"pid":5,"parent":1,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":6,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":16,"frames":0,"output_bytes":24},{"pid":7,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":9,"frames":0,"output_bytes":24}]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":15,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc list | json
+[{"pid":2,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":3,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":4,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":1},{"pid":5,"parent":1,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":6,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":16,"frames":0,"output_bytes":24},{"pid":7,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":9,"frames":0,"output_bytes":24}]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":15,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run isolate "333333"
+started user process as pid 8 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 8
+isolate: ok seed=333333
+process 8 exited status 0 | domain user | cpu 20 ticks
+tane> status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane> proc list | json
+[{"pid":2,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":3,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":4,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":1},{"pid":5,"parent":1,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":6,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":16,"frames":0,"output_bytes":24},{"pid":7,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":9,"frames":0,"output_bytes":24},{"pid":8,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":20,"frames":0,"output_bytes":24}]
+tane> proc output 8
+isolate: ok seed=333333
+tane> proc list | json
+[{"pid":2,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":3,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":4,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":1},{"pid":5,"parent":1,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":6,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":16,"frames":0,"output_bytes":24},{"pid":7,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":9,"frames":0,"output_bytes":24},{"pid":8,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":20,"frames":0,"output_bytes":24}]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":15,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc list | json
+[{"pid":2,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":3,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":4,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":1},{"pid":5,"parent":1,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":6,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":16,"frames":0,"output_bytes":24},{"pid":7,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":9,"frames":0,"output_bytes":24},{"pid":8,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":20,"frames":0,"output_bytes":24}]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":15,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run busy
+started user process as pid 9 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc run busy
+started user process as pid 10 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc list | json
+[{"pid":9,"parent":1,"name":"busy","domain":"user","state":"ready","cpu_ticks":11,"frames":12,"output_bytes":28},{"pid":10,"parent":1,"name":"busy","domain":"user","state":"ready","cpu_ticks":2,"frames":12,"output_bytes":28},{"pid":2,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":3,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":4,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":1},{"pid":5,"parent":1,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":6,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":16,"frames":0,"output_bytes":24},{"pid":7,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":9,"frames":0,"output_bytes":24},{"pid":8,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":20,"frames":0,"output_bytes":24}]
+tane> mem | json
+[{"usable":16056,"free":16032,"used":24,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":2,"frames":24,"files":0,"cpu_ticks":32,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc list | json
+[{"pid":9,"parent":1,"name":"busy","domain":"user","state":"ready","cpu_ticks":19,"frames":12,"output_bytes":28},{"pid":10,"parent":1,"name":"busy","domain":"user","state":"ready","cpu_ticks":4,"frames":12,"output_bytes":28},{"pid":2,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":3,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":4,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":1},{"pid":5,"parent":1,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":6,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":16,"frames":0,"output_bytes":24},{"pid":7,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":9,"frames":0,"output_bytes":24},{"pid":8,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":20,"frames":0,"output_bytes":24}]
+tane> proc list | json
+[{"pid":9,"parent":1,"name":"busy","domain":"user","state":"ready","cpu_ticks":23,"frames":12,"output_bytes":28},{"pid":10,"parent":1,"name":"busy","domain":"user","state":"ready","cpu_ticks":6,"frames":12,"output_bytes":28},{"pid":2,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":3,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":4,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":1},{"pid":5,"parent":1,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":6,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":16,"frames":0,"output_bytes":24},{"pid":7,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":9,"frames":0,"output_bytes":24},{"pid":8,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":20,"frames":0,"output_bytes":24}]
+tane> proc run hello
+denied: user frames limit reached (24/24) for spawn (quota; audited)
+tane> proc list | json
+[{"pid":9,"parent":1,"name":"busy","domain":"user","state":"ready","cpu_ticks":30,"frames":12,"output_bytes":28},{"pid":10,"parent":1,"name":"busy","domain":"user","state":"ready","cpu_ticks":7,"frames":12,"output_bytes":28},{"pid":2,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":3,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":4,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":1},{"pid":5,"parent":1,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":6,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":16,"frames":0,"output_bytes":24},{"pid":7,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":9,"frames":0,"output_bytes":24},{"pid":8,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":20,"frames":0,"output_bytes":24}]
+tane> mem | json
+[{"usable":16056,"free":16032,"used":24,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":2,"frames":24,"files":0,"cpu_ticks":32,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc list | json
+[{"pid":9,"parent":1,"name":"busy","domain":"user","state":"ready","cpu_ticks":37,"frames":12,"output_bytes":28},{"pid":10,"parent":1,"name":"busy","domain":"user","state":"ready","cpu_ticks":7,"frames":12,"output_bytes":28},{"pid":2,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":3,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":4,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":1},{"pid":5,"parent":1,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":6,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":16,"frames":0,"output_bytes":24},{"pid":7,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":9,"frames":0,"output_bytes":24},{"pid":8,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":20,"frames":0,"output_bytes":24}]
+tane> proc list | json
+[{"pid":9,"parent":1,"name":"busy","domain":"user","state":"ready","cpu_ticks":41,"frames":12,"output_bytes":28},{"pid":10,"parent":1,"name":"busy","domain":"user","state":"ready","cpu_ticks":7,"frames":12,"output_bytes":28},{"pid":2,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":3,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":4,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":1},{"pid":5,"parent":1,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":6,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":16,"frames":0,"output_bytes":24},{"pid":7,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":9,"frames":0,"output_bytes":24},{"pid":8,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":20,"frames":0,"output_bytes":24}]
+tane> sleep 1100
+slept 1100 ms
+tane> echo shell remains responsive
+shell remains responsive
+tane> proc list | json
+[{"pid":9,"parent":1,"name":"busy","domain":"user","state":"ready","cpu_ticks":147,"frames":12,"output_bytes":28},{"pid":10,"parent":1,"name":"busy","domain":"user","state":"ready","cpu_ticks":22,"frames":12,"output_bytes":28},{"pid":2,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":3,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":4,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":1},{"pid":5,"parent":1,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":6,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":16,"frames":0,"output_bytes":24},{"pid":7,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":9,"frames":0,"output_bytes":24},{"pid":8,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":20,"frames":0,"output_bytes":24}]
+tane> proc list | json
+[{"pid":9,"parent":1,"name":"busy","domain":"user","state":"ready","cpu_ticks":151,"frames":12,"output_bytes":28},{"pid":10,"parent":1,"name":"busy","domain":"user","state":"ready","cpu_ticks":22,"frames":12,"output_bytes":28},{"pid":2,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":3,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":4,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":1},{"pid":5,"parent":1,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":6,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":16,"frames":0,"output_bytes":24},{"pid":7,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":9,"frames":0,"output_bytes":24},{"pid":8,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":20,"frames":0,"output_bytes":24}]
+tane> proc wait 9
+cancelled: wait for process 9
+tane> status | json
+[{"code":"cancelled","operation":"proc wait","message":"cancelled"}]
+tane> proc list | json
+[{"pid":9,"parent":1,"name":"busy","domain":"user","state":"ready","cpu_ticks":165,"frames":12,"output_bytes":28},{"pid":10,"parent":1,"name":"busy","domain":"user","state":"ready","cpu_ticks":22,"frames":12,"output_bytes":28},{"pid":2,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":3,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":4,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":1},{"pid":5,"parent":1,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":6,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":16,"frames":0,"output_bytes":24},{"pid":7,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":9,"frames":0,"output_bytes":24},{"pid":8,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":20,"frames":0,"output_bytes":24}]
+tane> task kill 9
+killed pid 9 (busy); 16044 frames free
+tane> proc wait 9
+busy: preemptible user loop
+process 9 killed
+tane> status | json
+[{"code":"error","operation":"proc wait","message":"command failed"}]
+tane> proc list | json
+[{"pid":10,"parent":1,"name":"busy","domain":"user","state":"ready","cpu_ticks":31,"frames":12,"output_bytes":28},{"pid":2,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":3,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":4,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":1},{"pid":5,"parent":1,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":6,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":16,"frames":0,"output_bytes":24},{"pid":7,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":9,"frames":0,"output_bytes":24},{"pid":8,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":20,"frames":0,"output_bytes":24},{"pid":9,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":167,"frames":0,"output_bytes":28}]
+tane> task kill 10
+killed pid 10 (busy); 16056 frames free
+tane> proc wait 10
+busy: preemptible user loop
+process 10 killed
+tane> status | json
+[{"code":"error","operation":"proc wait","message":"command failed"}]
+tane> proc list | json
+[{"pid":3,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":4,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":1},{"pid":5,"parent":1,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":6,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":16,"frames":0,"output_bytes":24},{"pid":7,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":9,"frames":0,"output_bytes":24},{"pid":8,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":20,"frames":0,"output_bytes":24},{"pid":9,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":167,"frames":0,"output_bytes":28},{"pid":10,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":35,"frames":0,"output_bytes":28}]
+tane> proc list | json
+[{"pid":3,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":4,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":1},{"pid":5,"parent":1,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":6,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":16,"frames":0,"output_bytes":24},{"pid":7,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":9,"frames":0,"output_bytes":24},{"pid":8,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":20,"frames":0,"output_bytes":24},{"pid":9,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":167,"frames":0,"output_bytes":28},{"pid":10,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":35,"frames":0,"output_bytes":28}]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":96,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> task spawn spin
+started spin as pid 11 in domain admin
+tane> proc list | json
+[{"pid":3,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":4,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":1},{"pid":5,"parent":1,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":6,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":16,"frames":0,"output_bytes":24},{"pid":7,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":9,"frames":0,"output_bytes":24},{"pid":8,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":20,"frames":0,"output_bytes":24},{"pid":9,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":167,"frames":0,"output_bytes":28},{"pid":10,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":35,"frames":0,"output_bytes":28}]
+tane> mem | json
+[{"usable":16056,"free":16052,"used":4,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":1,"frames":4,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":96,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run probe "kernel-read"
+started user process as pid 12 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 12
+probe: kernel-read
+process 12 fault vector 14 error 0x5 rip 0x400005cd address 0x10000; process terminated
+tane> status | json
+[{"code":"error","operation":"proc wait","message":"command failed"}]
+tane> proc list | json
+[{"pid":4,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":1},{"pid":5,"parent":1,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":6,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":16,"frames":0,"output_bytes":24},{"pid":7,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":9,"frames":0,"output_bytes":24},{"pid":8,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":20,"frames":0,"output_bytes":24},{"pid":9,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":167,"frames":0,"output_bytes":28},{"pid":10,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":35,"frames":0,"output_bytes":28},{"pid":12,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":19}]
+tane> echo survived user fault
+survived user fault
+tane> proc list | json
+[{"pid":4,"parent":1,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":1},{"pid":5,"parent":1,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":6,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":16,"frames":0,"output_bytes":24},{"pid":7,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":9,"frames":0,"output_bytes":24},{"pid":8,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":20,"frames":0,"output_bytes":24},{"pid":9,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":167,"frames":0,"output_bytes":28},{"pid":10,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":35,"frames":0,"output_bytes":28},{"pid":12,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":19}]
+tane> mem | json
+[{"usable":16056,"free":16052,"used":4,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":1,"frames":4,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":96,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> task list | json
+[{"pid":1,"name":"shell","domain":"admin","state":"running","cpu_ticks":46,"counter":null,"stack":524288,"mode":"kernel"},{"pid":0,"name":"idle","domain":"kernel","state":"ready","cpu_ticks":249,"counter":null,"stack":1146896,"mode":"kernel"},{"pid":11,"name":"spin","domain":"admin","state":"ready","cpu_ticks":46,"counter":119472471,"stack":1654784,"mode":"kernel"}]
+tane> proc run probe "kernel-data"
+started user process as pid 13 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 13
+probe: kernel-data
+process 13 fault vector 14 error 0x5 rip 0x400007fb address 0x100000; process terminated
+tane> status | json
+[{"code":"error","operation":"proc wait","message":"command failed"}]
+tane> proc list | json
+[{"pid":5,"parent":1,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":6,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":16,"frames":0,"output_bytes":24},{"pid":7,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":9,"frames":0,"output_bytes":24},{"pid":8,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":20,"frames":0,"output_bytes":24},{"pid":9,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":167,"frames":0,"output_bytes":28},{"pid":10,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":35,"frames":0,"output_bytes":28},{"pid":12,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":19},{"pid":13,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":19}]
+tane> echo survived user fault
+survived user fault
+tane> proc list | json
+[{"pid":5,"parent":1,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":6,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":16,"frames":0,"output_bytes":24},{"pid":7,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":9,"frames":0,"output_bytes":24},{"pid":8,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":20,"frames":0,"output_bytes":24},{"pid":9,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":167,"frames":0,"output_bytes":28},{"pid":10,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":35,"frames":0,"output_bytes":28},{"pid":12,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":19},{"pid":13,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":19}]
+tane> mem | json
+[{"usable":16056,"free":16052,"used":4,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":1,"frames":4,"files":0,"cpu_ticks":56,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":13,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> task list | json
+[{"pid":1,"name":"shell","domain":"admin","state":"running","cpu_ticks":51,"counter":null,"stack":524288,"mode":"kernel"},{"pid":0,"name":"idle","domain":"kernel","state":"ready","cpu_ticks":249,"counter":null,"stack":1146896,"mode":"kernel"},{"pid":11,"name":"spin","domain":"admin","state":"ready","cpu_ticks":85,"counter":222441076,"stack":1654784,"mode":"kernel"}]
+tane> proc run probe "kernel-write"
+started user process as pid 14 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 14
+probe: kernel-write
+process 14 fault vector 14 error 0x7 rip 0x40000548 address 0x10000; process terminated
+tane> status | json
+[{"code":"error","operation":"proc wait","message":"command failed"}]
+tane> proc list | json
+[{"pid":6,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":16,"frames":0,"output_bytes":24},{"pid":7,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":9,"frames":0,"output_bytes":24},{"pid":8,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":20,"frames":0,"output_bytes":24},{"pid":9,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":167,"frames":0,"output_bytes":28},{"pid":10,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":35,"frames":0,"output_bytes":28},{"pid":12,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":19},{"pid":13,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":19},{"pid":14,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":20}]
+tane> echo survived user fault
+survived user fault
+tane> proc list | json
+[{"pid":6,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":16,"frames":0,"output_bytes":24},{"pid":7,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":9,"frames":0,"output_bytes":24},{"pid":8,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":20,"frames":0,"output_bytes":24},{"pid":9,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":167,"frames":0,"output_bytes":28},{"pid":10,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":35,"frames":0,"output_bytes":28},{"pid":12,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":19},{"pid":13,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":19},{"pid":14,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":20}]
+tane> mem | json
+[{"usable":16056,"free":16052,"used":4,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":1,"frames":4,"files":0,"cpu_ticks":56,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":13,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> task list | json
+[{"pid":1,"name":"shell","domain":"admin","state":"running","cpu_ticks":59,"counter":null,"stack":524288,"mode":"kernel"},{"pid":0,"name":"idle","domain":"kernel","state":"ready","cpu_ticks":249,"counter":null,"stack":1146896,"mode":"kernel"},{"pid":11,"name":"spin","domain":"admin","state":"ready","cpu_ticks":126,"counter":326886149,"stack":1654784,"mode":"kernel"}]
+tane> proc run probe "kernel-data-write"
+started user process as pid 15 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 15
+probe: kernel-data-write
+process 15 fault vector 14 error 0x7 rip 0x40000275 address 0x100000; process terminated
+tane> status | json
+[{"code":"error","operation":"proc wait","message":"command failed"}]
+tane> proc list | json
+[{"pid":7,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":9,"frames":0,"output_bytes":24},{"pid":8,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":20,"frames":0,"output_bytes":24},{"pid":9,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":167,"frames":0,"output_bytes":28},{"pid":10,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":35,"frames":0,"output_bytes":28},{"pid":12,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":19},{"pid":13,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":19},{"pid":14,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":20},{"pid":15,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":25}]
+tane> echo survived user fault
+survived user fault
+tane> proc list | json
+[{"pid":7,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":9,"frames":0,"output_bytes":24},{"pid":8,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":20,"frames":0,"output_bytes":24},{"pid":9,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":167,"frames":0,"output_bytes":28},{"pid":10,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":35,"frames":0,"output_bytes":28},{"pid":12,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":19},{"pid":13,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":19},{"pid":14,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":20},{"pid":15,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":25}]
+tane> mem | json
+[{"usable":16056,"free":16052,"used":4,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":1,"frames":4,"files":0,"cpu_ticks":89,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> task list | json
+[{"pid":1,"name":"shell","domain":"admin","state":"running","cpu_ticks":62,"counter":null,"stack":524288,"mode":"kernel"},{"pid":0,"name":"idle","domain":"kernel","state":"ready","cpu_ticks":249,"counter":null,"stack":1146896,"mode":"kernel"},{"pid":11,"name":"spin","domain":"admin","state":"ready","cpu_ticks":166,"counter":417877119,"stack":1654784,"mode":"kernel"}]
+tane> proc run probe "vga"
+started user process as pid 16 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 16
+probe: vga
+process 16 fault vector 14 error 0x7 rip 0x40000785 address 0xb8000; process terminated
+tane> status | json
+[{"code":"error","operation":"proc wait","message":"command failed"}]
+tane> proc list | json
+[{"pid":8,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":20,"frames":0,"output_bytes":24},{"pid":9,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":167,"frames":0,"output_bytes":28},{"pid":10,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":35,"frames":0,"output_bytes":28},{"pid":12,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":19},{"pid":13,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":19},{"pid":14,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":20},{"pid":15,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":25},{"pid":16,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11}]
+tane> echo survived user fault
+survived user fault
+tane> proc list | json
+[{"pid":8,"parent":1,"name":"isolate","domain":"user","state":"exited","cpu_ticks":20,"frames":0,"output_bytes":24},{"pid":9,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":167,"frames":0,"output_bytes":28},{"pid":10,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":35,"frames":0,"output_bytes":28},{"pid":12,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":19},{"pid":13,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":19},{"pid":14,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":20},{"pid":15,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":25},{"pid":16,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11}]
+tane> mem | json
+[{"usable":16056,"free":16052,"used":4,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":1,"frames":4,"files":0,"cpu_ticks":89,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> task list | json
+[{"pid":1,"name":"shell","domain":"admin","state":"running","cpu_ticks":72,"counter":null,"stack":524288,"mode":"kernel"},{"pid":0,"name":"idle","domain":"kernel","state":"ready","cpu_ticks":249,"counter":null,"stack":1146896,"mode":"kernel"},{"pid":11,"name":"spin","domain":"admin","state":"ready","cpu_ticks":203,"counter":518191881,"stack":1654784,"mode":"kernel"}]
+tane> proc run probe "vga-read"
+started user process as pid 17 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 17
+probe: vga-read
+process 17 fault vector 14 error 0x5 rip 0x40000331 address 0xb8000; process terminated
+tane> status | json
+[{"code":"error","operation":"proc wait","message":"command failed"}]
+tane> proc list | json
+[{"pid":9,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":167,"frames":0,"output_bytes":28},{"pid":10,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":35,"frames":0,"output_bytes":28},{"pid":12,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":19},{"pid":13,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":19},{"pid":14,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":20},{"pid":15,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":25},{"pid":16,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":17,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16}]
+tane> echo survived user fault
+survived user fault
+tane> proc list | json
+[{"pid":9,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":167,"frames":0,"output_bytes":28},{"pid":10,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":35,"frames":0,"output_bytes":28},{"pid":12,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":19},{"pid":13,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":19},{"pid":14,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":20},{"pid":15,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":25},{"pid":16,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":17,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16}]
+tane> mem | json
+[{"usable":16056,"free":16052,"used":4,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":1,"frames":4,"files":0,"cpu_ticks":84,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> task list | json
+[{"pid":1,"name":"shell","domain":"admin","state":"running","cpu_ticks":77,"counter":null,"stack":524288,"mode":"kernel"},{"pid":0,"name":"idle","domain":"kernel","state":"ready","cpu_ticks":249,"counter":null,"stack":1146896,"mode":"kernel"},{"pid":11,"name":"spin","domain":"admin","state":"ready","cpu_ticks":240,"counter":610732768,"stack":1654784,"mode":"kernel"}]
+tane> proc run probe "code-write"
+started user process as pid 18 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 18
+probe: code-write
+process 18 fault vector 14 error 0x7 rip 0x400004c3 address 0x40000000; process terminated
+tane> status | json
+[{"code":"error","operation":"proc wait","message":"command failed"}]
+tane> proc list | json
+[{"pid":10,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":35,"frames":0,"output_bytes":28},{"pid":12,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":19},{"pid":13,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":19},{"pid":14,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":20},{"pid":15,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":25},{"pid":16,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":17,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":18,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":18}]
+tane> echo survived user fault
+survived user fault
+tane> proc list | json
+[{"pid":10,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":35,"frames":0,"output_bytes":28},{"pid":12,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":19},{"pid":13,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":19},{"pid":14,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":20},{"pid":15,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":25},{"pid":16,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":17,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":18,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":18}]
+tane> mem | json
+[{"usable":16056,"free":16052,"used":4,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":1,"frames":4,"files":0,"cpu_ticks":84,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> task list | json
+[{"pid":1,"name":"shell","domain":"admin","state":"running","cpu_ticks":80,"counter":null,"stack":524288,"mode":"kernel"},{"pid":0,"name":"idle","domain":"kernel","state":"ready","cpu_ticks":249,"counter":null,"stack":1146896,"mode":"kernel"},{"pid":11,"name":"spin","domain":"admin","state":"ready","cpu_ticks":279,"counter":703272903,"stack":1654784,"mode":"kernel"}]
+tane> proc run probe "nx"
+started user process as pid 19 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 19
+probe: nx
+process 19 fault vector 14 error 0x15 rip 0x40001000 address 0x40001000; process terminated
+tane> status | json
+[{"code":"error","operation":"proc wait","message":"command failed"}]
+tane> proc list | json
+[{"pid":12,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":19},{"pid":13,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":19},{"pid":14,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":20},{"pid":15,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":25},{"pid":16,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":17,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":18,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":18},{"pid":19,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":10}]
+tane> echo survived user fault
+survived user fault
+tane> proc list | json
+[{"pid":12,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":19},{"pid":13,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":19},{"pid":14,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":20},{"pid":15,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":25},{"pid":16,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":17,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":18,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":18},{"pid":19,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":10}]
+tane> mem | json
+[{"usable":16056,"free":16052,"used":4,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":1,"frames":4,"files":0,"cpu_ticks":84,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> task list | json
+[{"pid":1,"name":"shell","domain":"admin","state":"running","cpu_ticks":82,"counter":null,"stack":524288,"mode":"kernel"},{"pid":0,"name":"idle","domain":"kernel","state":"ready","cpu_ticks":249,"counter":null,"stack":1146896,"mode":"kernel"},{"pid":11,"name":"spin","domain":"admin","state":"ready","cpu_ticks":314,"counter":785269819,"stack":1654784,"mode":"kernel"}]
+tane> proc run probe "stack-nx"
+started user process as pid 20 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 20
+probe: stack-nx
+process 20 fault vector 14 error 0x15 rip 0x40005ff7 address 0x40005ff7; process terminated
+tane> status | json
+[{"code":"error","operation":"proc wait","message":"command failed"}]
+tane> proc list | json
+[{"pid":13,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":19},{"pid":14,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":20},{"pid":15,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":25},{"pid":16,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":17,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":18,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":18},{"pid":19,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":10},{"pid":20,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16}]
+tane> echo survived user fault
+survived user fault
+tane> proc list | json
+[{"pid":13,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":19},{"pid":14,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":20},{"pid":15,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":25},{"pid":16,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":17,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":18,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":18},{"pid":19,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":10},{"pid":20,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16}]
+tane> mem | json
+[{"usable":16056,"free":16052,"used":4,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":1,"frames":4,"files":0,"cpu_ticks":92,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> task list | json
+[{"pid":1,"name":"shell","domain":"admin","state":"running","cpu_ticks":89,"counter":null,"stack":524288,"mode":"kernel"},{"pid":0,"name":"idle","domain":"kernel","state":"ready","cpu_ticks":249,"counter":null,"stack":1146896,"mode":"kernel"},{"pid":11,"name":"spin","domain":"admin","state":"ready","cpu_ticks":352,"counter":886421343,"stack":1654784,"mode":"kernel"}]
+tane> proc run probe "null"
+started user process as pid 21 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 21
+probe: null
+process 21 fault vector 14 error 0x4 rip 0x400003b5 address 0x0; process terminated
+tane> status | json
+[{"code":"error","operation":"proc wait","message":"command failed"}]
+tane> proc list | json
+[{"pid":14,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":20},{"pid":15,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":25},{"pid":16,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":17,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":18,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":18},{"pid":19,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":10},{"pid":20,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":21,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":12}]
+tane> echo survived user fault
+survived user fault
+tane> proc list | json
+[{"pid":14,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":20},{"pid":15,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":25},{"pid":16,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":17,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":18,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":18},{"pid":19,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":10},{"pid":20,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":21,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":12}]
+tane> mem | json
+[{"usable":16056,"free":16052,"used":4,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":1,"frames":4,"files":0,"cpu_ticks":92,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> task list | json
+[{"pid":1,"name":"shell","domain":"admin","state":"running","cpu_ticks":95,"counter":null,"stack":524288,"mode":"kernel"},{"pid":0,"name":"idle","domain":"kernel","state":"ready","cpu_ticks":249,"counter":null,"stack":1146896,"mode":"kernel"},{"pid":11,"name":"spin","domain":"admin","state":"ready","cpu_ticks":389,"counter":982484290,"stack":1654784,"mode":"kernel"}]
+tane> proc run probe "guard"
+started user process as pid 22 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 22
+probe: guard
+process 22 fault vector 14 error 0x6 rip 0x40000385 address 0x40003000; process terminated
+tane> status | json
+[{"code":"error","operation":"proc wait","message":"command failed"}]
+tane> proc list | json
+[{"pid":15,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":25},{"pid":16,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":17,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":18,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":18},{"pid":19,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":10},{"pid":20,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":21,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":12},{"pid":22,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13}]
+tane> echo survived user fault
+survived user fault
+tane> proc list | json
+[{"pid":15,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":25},{"pid":16,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":17,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":18,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":18},{"pid":19,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":10},{"pid":20,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":21,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":12},{"pid":22,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13}]
+tane> mem | json
+[{"usable":16056,"free":16052,"used":4,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":1,"frames":4,"files":0,"cpu_ticks":84,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> task list | json
+[{"pid":1,"name":"shell","domain":"admin","state":"running","cpu_ticks":101,"counter":null,"stack":524288,"mode":"kernel"},{"pid":0,"name":"idle","domain":"kernel","state":"ready","cpu_ticks":249,"counter":null,"stack":1146896,"mode":"kernel"},{"pid":11,"name":"spin","domain":"admin","state":"ready","cpu_ticks":427,"counter":1078957176,"stack":1654784,"mode":"kernel"}]
+tane> proc run probe "stack-end"
+started user process as pid 23 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 23
+probe: stack-end
+process 23 fault vector 14 error 0x6 rip 0x40000452 address 0x40006000; process terminated
+tane> status | json
+[{"code":"error","operation":"proc wait","message":"command failed"}]
+tane> proc list | json
+[{"pid":16,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":17,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":18,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":18},{"pid":19,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":10},{"pid":20,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":21,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":12},{"pid":22,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":23,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":17}]
+tane> echo survived user fault
+survived user fault
+tane> proc list | json
+[{"pid":16,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":17,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":18,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":18},{"pid":19,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":10},{"pid":20,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":21,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":12},{"pid":22,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":23,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":17}]
+tane> mem | json
+[{"usable":16056,"free":16052,"used":4,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":1,"frames":4,"files":0,"cpu_ticks":84,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> task list | json
+[{"pid":1,"name":"shell","domain":"admin","state":"running","cpu_ticks":106,"counter":null,"stack":524288,"mode":"kernel"},{"pid":0,"name":"idle","domain":"kernel","state":"ready","cpu_ticks":249,"counter":null,"stack":1146896,"mode":"kernel"},{"pid":11,"name":"spin","domain":"admin","state":"ready","cpu_ticks":466,"counter":1181514603,"stack":1654784,"mode":"kernel"}]
+tane> proc run probe "cli"
+started user process as pid 24 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 24
+probe: cli
+process 24 fault vector 13 error 0x0 rip 0x400007ab address 0x0; process terminated
+tane> status | json
+[{"code":"error","operation":"proc wait","message":"command failed"}]
+tane> proc list | json
+[{"pid":17,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":18,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":18},{"pid":19,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":10},{"pid":20,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":21,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":12},{"pid":22,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":23,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":17},{"pid":24,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11}]
+tane> echo survived user fault
+survived user fault
+tane> proc list | json
+[{"pid":17,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":18,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":18},{"pid":19,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":10},{"pid":20,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":21,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":12},{"pid":22,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":23,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":17},{"pid":24,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11}]
+tane> mem | json
+[{"usable":16056,"free":16052,"used":4,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":1,"frames":4,"files":0,"cpu_ticks":87,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> task list | json
+[{"pid":1,"name":"shell","domain":"admin","state":"running","cpu_ticks":113,"counter":null,"stack":524288,"mode":"kernel"},{"pid":0,"name":"idle","domain":"kernel","state":"ready","cpu_ticks":249,"counter":null,"stack":1146896,"mode":"kernel"},{"pid":11,"name":"spin","domain":"admin","state":"ready","cpu_ticks":497,"counter":1264605068,"stack":1654784,"mode":"kernel"}]
+tane> proc run probe "hlt"
+started user process as pid 25 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 25
+probe: hlt
+process 25 fault vector 13 error 0x0 rip 0x4000061d address 0x0; process terminated
+tane> status | json
+[{"code":"error","operation":"proc wait","message":"command failed"}]
+tane> proc list | json
+[{"pid":18,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":18},{"pid":19,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":10},{"pid":20,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":21,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":12},{"pid":22,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":23,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":17},{"pid":24,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":25,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11}]
+tane> echo survived user fault
+survived user fault
+tane> proc list | json
+[{"pid":18,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":18},{"pid":19,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":10},{"pid":20,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":21,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":12},{"pid":22,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":23,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":17},{"pid":24,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":25,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11}]
+tane> mem | json
+[{"usable":16056,"free":16052,"used":4,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":1,"frames":4,"files":0,"cpu_ticks":87,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> task list | json
+[{"pid":1,"name":"shell","domain":"admin","state":"running","cpu_ticks":117,"counter":null,"stack":524288,"mode":"kernel"},{"pid":0,"name":"idle","domain":"kernel","state":"ready","cpu_ticks":249,"counter":null,"stack":1146896,"mode":"kernel"},{"pid":11,"name":"spin","domain":"admin","state":"ready","cpu_ticks":534,"counter":1355604266,"stack":1654784,"mode":"kernel"}]
+tane> proc run probe "in"
+started user process as pid 26 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 26
+probe: in
+process 26 fault vector 13 error 0x0 rip 0x400005df address 0x0; process terminated
+tane> status | json
+[{"code":"error","operation":"proc wait","message":"command failed"}]
+tane> proc list | json
+[{"pid":19,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":10},{"pid":20,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":21,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":12},{"pid":22,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":23,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":17},{"pid":24,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":25,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":26,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":10}]
+tane> echo survived user fault
+survived user fault
+tane> proc list | json
+[{"pid":19,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":10},{"pid":20,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":21,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":12},{"pid":22,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":23,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":17},{"pid":24,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":25,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":26,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":10}]
+tane> mem | json
+[{"usable":16056,"free":16052,"used":4,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":1,"frames":4,"files":0,"cpu_ticks":87,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> task list | json
+[{"pid":1,"name":"shell","domain":"admin","state":"running","cpu_ticks":119,"counter":null,"stack":524288,"mode":"kernel"},{"pid":0,"name":"idle","domain":"kernel","state":"ready","cpu_ticks":249,"counter":null,"stack":1146896,"mode":"kernel"},{"pid":11,"name":"spin","domain":"admin","state":"ready","cpu_ticks":570,"counter":1437567381,"stack":1654784,"mode":"kernel"}]
+tane> proc run probe "out"
+started user process as pid 27 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 27
+probe: out
+process 27 fault vector 13 error 0x0 rip 0x400003ec address 0x0; process terminated
+tane> status | json
+[{"code":"error","operation":"proc wait","message":"command failed"}]
+tane> proc list | json
+[{"pid":20,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":21,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":12},{"pid":22,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":23,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":17},{"pid":24,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":25,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":26,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":10},{"pid":27,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11}]
+tane> echo survived user fault
+survived user fault
+tane> proc list | json
+[{"pid":20,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":21,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":12},{"pid":22,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":23,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":17},{"pid":24,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":25,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":26,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":10},{"pid":27,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11}]
+tane> mem | json
+[{"usable":16056,"free":16052,"used":4,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":1,"frames":4,"files":0,"cpu_ticks":92,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> task list | json
+[{"pid":1,"name":"shell","domain":"admin","state":"running","cpu_ticks":122,"counter":null,"stack":524288,"mode":"kernel"},{"pid":0,"name":"idle","domain":"kernel","state":"ready","cpu_ticks":249,"counter":null,"stack":1146896,"mode":"kernel"},{"pid":11,"name":"spin","domain":"admin","state":"ready","cpu_ticks":606,"counter":1526169564,"stack":1654784,"mode":"kernel"}]
+tane> proc run probe "int48"
+started user process as pid 28 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 28
+probe: int48
+process 28 fault vector 13 error 0x182 rip 0x400006a1 address 0x0; process terminated
+tane> status | json
+[{"code":"error","operation":"proc wait","message":"command failed"}]
+tane> proc list | json
+[{"pid":21,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":12},{"pid":22,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":23,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":17},{"pid":24,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":25,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":26,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":10},{"pid":27,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":28,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13}]
+tane> echo survived user fault
+survived user fault
+tane> proc list | json
+[{"pid":21,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":12},{"pid":22,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":23,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":17},{"pid":24,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":25,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":26,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":10},{"pid":27,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":28,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13}]
+tane> mem | json
+[{"usable":16056,"free":16052,"used":4,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":1,"frames":4,"files":0,"cpu_ticks":92,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> task list | json
+[{"pid":1,"name":"shell","domain":"admin","state":"running","cpu_ticks":125,"counter":null,"stack":524288,"mode":"kernel"},{"pid":0,"name":"idle","domain":"kernel","state":"ready","cpu_ticks":249,"counter":null,"stack":1146896,"mode":"kernel"},{"pid":11,"name":"spin","domain":"admin","state":"ready","cpu_ticks":643,"counter":1613455885,"stack":1654784,"mode":"kernel"}]
+tane> proc run probe "sse"
+started user process as pid 29 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 29
+probe: sse
+process 29 fault vector 7 error 0x0 rip 0x40000747 address 0x0; process terminated
+tane> status | json
+[{"code":"error","operation":"proc wait","message":"command failed"}]
+tane> proc list | json
+[{"pid":22,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":23,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":17},{"pid":24,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":25,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":26,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":10},{"pid":27,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":28,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":29,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11}]
+tane> echo survived user fault
+survived user fault
+tane> proc list | json
+[{"pid":22,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":23,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":17},{"pid":24,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":25,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":26,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":10},{"pid":27,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":28,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":29,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11}]
+tane> mem | json
+[{"usable":16056,"free":16052,"used":4,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":1,"frames":4,"files":0,"cpu_ticks":92,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> task list | json
+[{"pid":1,"name":"shell","domain":"admin","state":"running","cpu_ticks":131,"counter":null,"stack":524288,"mode":"kernel"},{"pid":0,"name":"idle","domain":"kernel","state":"ready","cpu_ticks":249,"counter":null,"stack":1146896,"mode":"kernel"},{"pid":11,"name":"spin","domain":"admin","state":"ready","cpu_ticks":675,"counter":1700244490,"stack":1654784,"mode":"kernel"}]
+tane> proc run probe "x87"
+started user process as pid 30 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 30
+probe: x87
+process 30 fault vector 7 error 0x0 rip 0x40000798 address 0x0; process terminated
+tane> status | json
+[{"code":"error","operation":"proc wait","message":"command failed"}]
+tane> proc list | json
+[{"pid":23,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":17},{"pid":24,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":25,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":26,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":10},{"pid":27,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":28,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":29,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":30,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11}]
+tane> echo survived user fault
+survived user fault
+tane> proc list | json
+[{"pid":23,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":17},{"pid":24,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":25,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":26,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":10},{"pid":27,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":28,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":29,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":30,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11}]
+tane> mem | json
+[{"usable":16056,"free":16052,"used":4,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":1,"frames":4,"files":0,"cpu_ticks":89,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> task list | json
+[{"pid":1,"name":"shell","domain":"admin","state":"running","cpu_ticks":136,"counter":null,"stack":524288,"mode":"kernel"},{"pid":0,"name":"idle","domain":"kernel","state":"ready","cpu_ticks":249,"counter":null,"stack":1146896,"mode":"kernel"},{"pid":11,"name":"spin","domain":"admin","state":"ready","cpu_ticks":712,"counter":1798919286,"stack":1654784,"mode":"kernel"}]
+tane> proc run probe "ud2"
+started user process as pid 31 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 31
+probe: ud2
+process 31 fault vector 6 error 0x0 rip 0x40000763 address 0x0; process terminated
+tane> status | json
+[{"code":"error","operation":"proc wait","message":"command failed"}]
+tane> proc list | json
+[{"pid":24,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":25,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":26,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":10},{"pid":27,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":28,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":29,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":30,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":31,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11}]
+tane> echo survived user fault
+survived user fault
+tane> proc list | json
+[{"pid":24,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":25,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":26,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":10},{"pid":27,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":28,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":29,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":30,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":31,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11}]
+tane> mem | json
+[{"usable":16056,"free":16052,"used":4,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":1,"frames":4,"files":0,"cpu_ticks":89,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> task list | json
+[{"pid":1,"name":"shell","domain":"admin","state":"running","cpu_ticks":142,"counter":null,"stack":524288,"mode":"kernel"},{"pid":0,"name":"idle","domain":"kernel","state":"ready","cpu_ticks":249,"counter":null,"stack":1146896,"mode":"kernel"},{"pid":11,"name":"spin","domain":"admin","state":"ready","cpu_ticks":748,"counter":1900638970,"stack":1654784,"mode":"kernel"}]
+tane> proc run probe "syscall"
+started user process as pid 32 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 32
+probe: syscall
+process 32 fault vector 6 error 0x0 rip 0x400002c1 address 0x0; process terminated
+tane> status | json
+[{"code":"error","operation":"proc wait","message":"command failed"}]
+tane> proc list | json
+[{"pid":25,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":26,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":10},{"pid":27,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":28,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":29,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":30,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":31,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":32,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":15}]
+tane> echo survived user fault
+survived user fault
+tane> proc list | json
+[{"pid":25,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":26,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":10},{"pid":27,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":28,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":29,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":30,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":31,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":32,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":15}]
+tane> mem | json
+[{"usable":16056,"free":16052,"used":4,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":1,"frames":4,"files":0,"cpu_ticks":88,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> task list | json
+[{"pid":1,"name":"shell","domain":"admin","state":"running","cpu_ticks":148,"counter":null,"stack":524288,"mode":"kernel"},{"pid":0,"name":"idle","domain":"kernel","state":"ready","cpu_ticks":249,"counter":null,"stack":1146896,"mode":"kernel"},{"pid":11,"name":"spin","domain":"admin","state":"ready","cpu_ticks":785,"counter":2000408089,"stack":1654784,"mode":"kernel"}]
+tane> proc run probe "sysenter"
+started user process as pid 33 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 33
+probe: sysenter
+process 33 fault vector 6 error 0x0 rip 0x40000672 address 0x0; process terminated
+tane> status | json
+[{"code":"error","operation":"proc wait","message":"command failed"}]
+tane> proc list | json
+[{"pid":26,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":10},{"pid":27,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":28,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":29,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":30,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":31,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":32,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":15},{"pid":33,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16}]
+tane> echo survived user fault
+survived user fault
+tane> proc list | json
+[{"pid":26,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":10},{"pid":27,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":28,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":29,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":30,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":31,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":32,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":15},{"pid":33,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16}]
+tane> mem | json
+[{"usable":16056,"free":16052,"used":4,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":1,"frames":4,"files":0,"cpu_ticks":88,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> task list | json
+[{"pid":1,"name":"shell","domain":"admin","state":"running","cpu_ticks":154,"counter":null,"stack":524288,"mode":"kernel"},{"pid":0,"name":"idle","domain":"kernel","state":"ready","cpu_ticks":249,"counter":null,"stack":1146896,"mode":"kernel"},{"pid":11,"name":"spin","domain":"admin","state":"ready","cpu_ticks":823,"counter":2090031562,"stack":1654784,"mode":"kernel"}]
+tane> proc run probe "fsgsbase"
+started user process as pid 34 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 34
+probe: fsgsbase
+process 34 fault vector 6 error 0x0 rip 0x400006f0 address 0x0; process terminated
+tane> status | json
+[{"code":"error","operation":"proc wait","message":"command failed"}]
+tane> proc list | json
+[{"pid":27,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":28,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":29,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":30,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":31,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":32,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":15},{"pid":33,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":34,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16}]
+tane> echo survived user fault
+survived user fault
+tane> proc list | json
+[{"pid":27,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":28,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":29,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":30,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":31,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":32,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":15},{"pid":33,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":34,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16}]
+tane> mem | json
+[{"usable":16056,"free":16052,"used":4,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":1,"frames":4,"files":0,"cpu_ticks":86,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> task list | json
+[{"pid":1,"name":"shell","domain":"admin","state":"running","cpu_ticks":159,"counter":null,"stack":524288,"mode":"kernel"},{"pid":0,"name":"idle","domain":"kernel","state":"ready","cpu_ticks":249,"counter":null,"stack":1146896,"mode":"kernel"},{"pid":11,"name":"spin","domain":"admin","state":"ready","cpu_ticks":857,"counter":2180768243,"stack":1654784,"mode":"kernel"}]
+tane> proc run probe "xsave"
+started user process as pid 35 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 35
+probe: xsave
+process 35 fault vector 6 error 0x0 rip 0x4000072b address 0x0; process terminated
+tane> status | json
+[{"code":"error","operation":"proc wait","message":"command failed"}]
+tane> proc list | json
+[{"pid":28,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":29,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":30,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":31,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":32,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":15},{"pid":33,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":34,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":35,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13}]
+tane> echo survived user fault
+survived user fault
+tane> proc list | json
+[{"pid":28,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":29,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":30,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":31,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":32,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":15},{"pid":33,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":34,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":35,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13}]
+tane> mem | json
+[{"usable":16056,"free":16052,"used":4,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":1,"frames":4,"files":0,"cpu_ticks":86,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> task list | json
+[{"pid":1,"name":"shell","domain":"admin","state":"running","cpu_ticks":166,"counter":null,"stack":524288,"mode":"kernel"},{"pid":0,"name":"idle","domain":"kernel","state":"ready","cpu_ticks":249,"counter":null,"stack":1146896,"mode":"kernel"},{"pid":11,"name":"spin","domain":"admin","state":"ready","cpu_ticks":894,"counter":2281299509,"stack":1654784,"mode":"kernel"}]
+tane> task kill 11
+killed pid 11 (spin); 16056 frames free
+tane> proc list | json
+[{"pid":28,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":29,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":30,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":31,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":32,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":15},{"pid":33,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":34,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":35,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13}]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":86,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> file list | json
+[]
+tane> proc list | json
+[{"pid":28,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":29,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":30,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":31,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":32,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":15},{"pid":33,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":34,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":35,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13}]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":86,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run probe "badptr"
+started user process as pid 36 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 36
+probe: bad pointers/length/syscall rejected
+process 36 exited status 0 | domain user | cpu 0 ticks
+tane> status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane> proc list | json
+[{"pid":29,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":30,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":31,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":32,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":15},{"pid":33,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":34,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":35,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":36,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":44}]
+tane> proc output 36
+probe: bad pointers/length/syscall rejected
+tane> proc list | json
+[{"pid":29,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":30,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":31,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":32,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":15},{"pid":33,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":34,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":35,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":36,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":44}]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":51,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> file list | json
+[]
+tane> proc list | json
+[{"pid":29,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":30,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":31,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":32,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":15},{"pid":33,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":34,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":35,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":36,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":44}]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":51,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run probe "denied"
+started user process as pid 37 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 37
+probe: privileged syscalls denied
+process 37 exited status 0 | domain user | cpu 0 ticks
+tane> status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane> proc list | json
+[{"pid":30,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":31,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":32,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":15},{"pid":33,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":34,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":35,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":36,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":44},{"pid":37,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34}]
+tane> proc output 37
+probe: privileged syscalls denied
+tane> proc list | json
+[{"pid":30,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":31,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":32,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":15},{"pid":33,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":34,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":35,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":36,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":44},{"pid":37,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34}]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":51,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> file list | json
+[]
+tane> audit | json
+[{"id":1,"ticks":337,"pid":1,"subject":"user","operation":"spawn","object":null,"target":null,"reason":"quota"},{"id":2,"ticks":1632,"pid":37,"subject":"user","operation":"format","object":null,"target":null,"reason":"policy"},{"id":3,"ticks":1632,"pid":37,"subject":"user","operation":"audit","object":null,"target":null,"reason":"policy"},{"id":4,"ticks":1632,"pid":37,"subject":"user","operation":"net-ping","object":null,"target":null,"reason":"policy"}]
+tane> proc list | json
+[{"pid":30,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":31,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":32,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":15},{"pid":33,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":34,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":35,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":36,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":44},{"pid":37,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34}]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":51,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run files "ring3-demo"
+started user process as pid 38 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 38
+files: written by Rust ring3
+process 38 exited status 0 | domain user | cpu 0 ticks
+tane> status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane> proc list | json
+[{"pid":31,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":32,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":15},{"pid":33,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":34,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":35,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":36,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":44},{"pid":37,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":38,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29}]
+tane> proc output 38
+files: written by Rust ring3
+tane> proc list | json
+[{"pid":31,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":32,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":15},{"pid":33,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":34,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":35,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":36,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":44},{"pid":37,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":38,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29}]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":1,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> file list | json
+[{"slot":0,"label":"user","bytes":22,"generation":2,"name":"ring3-demo"}]
+tane> file read ring3-demo
+written by Rust ring3
+tane> proc list | json
+[{"pid":31,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":11},{"pid":32,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":15},{"pid":33,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":34,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":35,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":36,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":44},{"pid":37,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":38,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29}]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":1,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> plan file append ring3-demo "SHELL-STALE"
+planned #1; show to review, apply 1 to commit
+tane> proc run files "ring3-demo"
+started user process as pid 39 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 39
+files: written by Rust ring3
+written by Rust ring3
+process 39 exited status 0 | domain user | cpu 1 ticks
+tane> status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane> proc list | json
+[{"pid":32,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":15},{"pid":33,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":34,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":35,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":36,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":44},{"pid":37,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":38,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":39,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":51}]
+tane> file read ring3-demo
+written by Rust ring3
+written by Rust ring3
+tane> apply
+error: storage changed since plan; plan consumed
+tane> file read ring3-demo
+written by Rust ring3
+written by Rust ring3
+tane> plan file append ring3-demo "SHELL-FRESH"
+planned #2; show to review, apply 2 to commit
+tane> apply
+applied #2: committed
+tane> status | json
+[{"code":"success","operation":"apply","message":"completed"}]
+tane> file read ring3-demo
+written by Rust ring3
+written by Rust ring3
+SHELL-FRESH
+tane> proc list | json
+[{"pid":32,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":15},{"pid":33,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":34,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":35,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":36,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":44},{"pid":37,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":38,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":39,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":51}]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":1,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc list | json
+[{"pid":32,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":15},{"pid":33,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":34,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":35,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":36,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":44},{"pid":37,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":38,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":39,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":51}]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":1,"cpu_ticks":1,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run files "badptr"
+started user process as pid 40 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 40
+files: bad pointer rejected without write
+process 40 exited status 0 | domain user | cpu 0 ticks
+tane> status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane> proc list | json
+[{"pid":33,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":34,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":35,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":36,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":44},{"pid":37,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":38,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":39,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":51},{"pid":40,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":42}]
+tane> proc output 40
+files: bad pointer rejected without write
+tane> proc list | json
+[{"pid":33,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":34,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":35,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":36,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":44},{"pid":37,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":38,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":39,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":51},{"pid":40,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":42}]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":2,"cpu_ticks":1,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> file list | json
+[{"slot":0,"label":"user","bytes":55,"generation":4,"name":"ring3-demo"},{"slot":1,"label":"user","bytes":0,"generation":1,"name":"ring3-cap"}]
+tane> proc list | json
+[{"pid":33,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":34,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":35,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":36,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":44},{"pid":37,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":38,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":39,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":51},{"pid":40,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":42}]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":2,"cpu_ticks":1,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run files "rights"
+started user process as pid 41 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 41
+files: write right and closed handle rejected
+process 41 exited status 0 | domain user | cpu 0 ticks
+tane> status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane> proc list | json
+[{"pid":34,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":35,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":36,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":44},{"pid":37,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":38,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":39,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":51},{"pid":40,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":42},{"pid":41,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":46}]
+tane> proc output 41
+files: write right and closed handle rejected
+tane> proc list | json
+[{"pid":34,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":35,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":36,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":44},{"pid":37,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":38,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":39,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":51},{"pid":40,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":42},{"pid":41,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":46}]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":2,"cpu_ticks":1,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc list | json
+[{"pid":34,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":16},{"pid":35,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":36,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":44},{"pid":37,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":38,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":39,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":51},{"pid":40,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":42},{"pid":41,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":46}]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":2,"cpu_ticks":1,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run files "stale"
+started user process as pid 42 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 42
+files: stale generation and reused handle rejected
+process 42 exited status 0 | domain user | cpu 0 ticks
+tane> status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane> proc list | json
+[{"pid":35,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":36,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":44},{"pid":37,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":38,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":39,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":51},{"pid":40,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":42},{"pid":41,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":46},{"pid":42,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":51}]
+tane> proc output 42
+files: stale generation and reused handle rejected
+tane> proc list | json
+[{"pid":35,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":36,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":44},{"pid":37,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":38,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":39,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":51},{"pid":40,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":42},{"pid":41,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":46},{"pid":42,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":51}]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":3,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc list | json
+[{"pid":35,"parent":1,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":13},{"pid":36,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":44},{"pid":37,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":38,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":39,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":51},{"pid":40,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":42},{"pid":41,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":46},{"pid":42,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":51}]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":3,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run files "hold"
+started user process as pid 43 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc output 43
+files: handle=11
+tane> file list | json
+[{"slot":0,"label":"user","bytes":55,"generation":4,"name":"ring3-demo"},{"slot":1,"label":"user","bytes":0,"generation":1,"name":"ring3-cap"},{"slot":2,"label":"user","bytes":1,"generation":2,"name":"ring3-stale"},{"slot":3,"label":"user","bytes":0,"generation":1,"name":"ring3-held"}]
+tane> proc run files "steal 11"
+started user process as pid 44 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 44
+files: foreign handle rejected
+process 44 exited status 0 | domain user | cpu 0 ticks
+tane> status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane> proc list | json
+[{"pid":43,"parent":1,"name":"files","domain":"user","state":"sleeping","cpu_ticks":0,"frames":12,"output_bytes":17},{"pid":36,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":44},{"pid":37,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":38,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":39,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":51},{"pid":40,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":42},{"pid":41,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":46},{"pid":42,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":51},{"pid":44,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":31}]
+tane> file list | json
+[{"slot":0,"label":"user","bytes":55,"generation":4,"name":"ring3-demo"},{"slot":1,"label":"user","bytes":0,"generation":1,"name":"ring3-cap"},{"slot":2,"label":"user","bytes":1,"generation":2,"name":"ring3-stale"},{"slot":3,"label":"user","bytes":0,"generation":1,"name":"ring3-held"}]
+tane> proc list | json
+[{"pid":43,"parent":1,"name":"files","domain":"user","state":"sleeping","cpu_ticks":0,"frames":12,"output_bytes":17},{"pid":36,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":44},{"pid":37,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":38,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":39,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":51},{"pid":40,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":42},{"pid":41,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":46},{"pid":42,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":51},{"pid":44,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":31}]
+tane> task kill 43
+killed pid 43 (files); 16056 frames free
+tane> proc wait 43
+files: handle=11
+process 43 killed
+tane> status | json
+[{"code":"error","operation":"proc wait","message":"command failed"}]
+tane> proc list | json
+[{"pid":37,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":38,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":39,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":51},{"pid":40,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":42},{"pid":41,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":46},{"pid":42,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":51},{"pid":44,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":31},{"pid":43,"parent":1,"name":"files","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":17}]
+tane> proc list | json
+[{"pid":37,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":38,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":39,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":51},{"pid":40,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":42},{"pid":41,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":46},{"pid":42,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":51},{"pid":44,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":31},{"pid":43,"parent":1,"name":"files","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":17}]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":4,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> file write admin-secret classified
+created admin-secret (10 bytes, label admin)
+tane> proc list | json
+[{"pid":37,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":38,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":39,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":51},{"pid":40,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":42},{"pid":41,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":46},{"pid":42,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":51},{"pid":44,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":31},{"pid":43,"parent":1,"name":"files","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":17}]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":1,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":4,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run files "admin-secret"
+started user process as pid 45 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 45
+files: open denied/error
+process 45 exited status 1 | domain user | cpu 0 ticks
+tane> status | json
+[{"code":"error","operation":"proc wait","message":"command failed"}]
+tane> proc list | json
+[{"pid":38,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":39,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":51},{"pid":40,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":42},{"pid":41,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":46},{"pid":42,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":51},{"pid":44,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":31},{"pid":43,"parent":1,"name":"files","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":17},{"pid":45,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":25}]
+tane> proc list | json
+[{"pid":38,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":39,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":51},{"pid":40,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":42},{"pid":41,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":46},{"pid":42,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":51},{"pid":44,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":31},{"pid":43,"parent":1,"name":"files","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":17},{"pid":45,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":25}]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":1,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":4,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> file read admin-secret
+classified
+tane> proc install hello adminhello.tane
+installed hello as adminhello.tane (544 bytes, label admin)
+tane> file list | json
+[{"slot":0,"label":"user","bytes":55,"generation":4,"name":"ring3-demo"},{"slot":1,"label":"user","bytes":0,"generation":1,"name":"ring3-cap"},{"slot":2,"label":"user","bytes":1,"generation":2,"name":"ring3-stale"},{"slot":3,"label":"user","bytes":0,"generation":1,"name":"ring3-held"},{"slot":4,"label":"admin","bytes":10,"generation":1,"name":"admin-secret"},{"slot":5,"label":"admin","bytes":544,"generation":1,"name":"adminhello.tane"}]
+tane> proc list | json
+[{"pid":38,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":39,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":51},{"pid":40,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":42},{"pid":41,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":46},{"pid":42,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":51},{"pid":44,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":31},{"pid":43,"parent":1,"name":"files","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":17},{"pid":45,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":25}]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":2,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":4,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc exec adminhello.tane
+denied: user may not read objects of domain admin (MAC policy; audited)
+tane> proc list | json
+[{"pid":38,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":39,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":51},{"pid":40,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":42},{"pid":41,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":46},{"pid":42,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":51},{"pid":44,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":31},{"pid":43,"parent":1,"name":"files","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":17},{"pid":45,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":25}]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":2,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":4,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc list | json
+[{"pid":38,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":39,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":51},{"pid":40,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":42},{"pid":41,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":46},{"pid":42,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":51},{"pid":44,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":31},{"pid":43,"parent":1,"name":"files","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":17},{"pid":45,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":25}]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":2,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":4,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run absent
+error: unknown builtin user program
+tane> proc list | json
+[{"pid":38,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":39,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":51},{"pid":40,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":42},{"pid":41,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":46},{"pid":42,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":51},{"pid":44,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":31},{"pid":43,"parent":1,"name":"files","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":17},{"pid":45,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":25}]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":2,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":4,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run
+error: proc run PROGRAM [TEXT]
+tane> proc list | json
+[{"pid":38,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":39,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":51},{"pid":40,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":42},{"pid":41,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":46},{"pid":42,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":51},{"pid":44,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":31},{"pid":43,"parent":1,"name":"files","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":17},{"pid":45,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":25}]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":2,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":4,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc wait 0
+error: invalid process PID
+tane> proc list | json
+[{"pid":38,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":39,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":51},{"pid":40,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":42},{"pid":41,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":46},{"pid":42,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":51},{"pid":44,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":31},{"pid":43,"parent":1,"name":"files","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":17},{"pid":45,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":25}]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":2,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":4,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc output 0
+error: invalid process PID
+tane> proc list | json
+[{"pid":38,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":39,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":51},{"pid":40,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":42},{"pid":41,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":46},{"pid":42,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":51},{"pid":44,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":31},{"pid":43,"parent":1,"name":"files","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":17},{"pid":45,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":25}]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":2,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":4,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run hello | nonsense
+error: pipeline sources must be read operations or bounded ping
+tane> proc list | json
+[{"pid":38,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":39,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":51},{"pid":40,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":42},{"pid":41,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":46},{"pid":42,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":51},{"pid":44,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":31},{"pid":43,"parent":1,"name":"files","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":17},{"pid":45,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":25}]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":2,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":4,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run hello | json
+error: pipeline sources must be read operations or bounded ping
+tane> proc list | json
+[{"pid":38,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":39,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":51},{"pid":40,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":42},{"pid":41,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":46},{"pid":42,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":51},{"pid":44,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":31},{"pid":43,"parent":1,"name":"files","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":17},{"pid":45,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":25}]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":2,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":4,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc programs | select unknown | json
+error: unknown column
+tane> proc list | json
+[{"pid":38,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":39,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":51},{"pid":40,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":42},{"pid":41,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":46},{"pid":42,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":51},{"pid":44,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":31},{"pid":43,"parent":1,"name":"files","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":17},{"pid":45,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":25}]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":2,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":4,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc list | sort unknown
+error: unknown column
+tane> proc list | json
+[{"pid":38,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":39,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":51},{"pid":40,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":42},{"pid":41,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":46},{"pid":42,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":51},{"pid":44,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":31},{"pid":43,"parent":1,"name":"files","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":17},{"pid":45,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":25}]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":2,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":4,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run echo "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+error: process arguments exceed 128 bytes
+tane> proc list | json
+[{"pid":38,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":39,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":51},{"pid":40,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":42},{"pid":41,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":46},{"pid":42,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":51},{"pid":44,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":31},{"pid":43,"parent":1,"name":"files","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":17},{"pid":45,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":25}]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":2,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":4,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> drop
+domain admin -> user; this cannot be undone until reboot
+tane$ status | json
+[{"code":"success","operation":"drop","message":"completed"}]
+tane$ file list | json
+[{"slot":0,"label":"user","bytes":55,"generation":4,"name":"ring3-demo"},{"slot":1,"label":"user","bytes":0,"generation":1,"name":"ring3-cap"},{"slot":2,"label":"user","bytes":1,"generation":2,"name":"ring3-stale"},{"slot":3,"label":"user","bytes":0,"generation":1,"name":"ring3-held"}]
+tane$ proc list | json
+[{"pid":38,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":39,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":51},{"pid":40,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":42},{"pid":41,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":46},{"pid":42,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":51},{"pid":44,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":31},{"pid":43,"parent":1,"name":"files","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":17},{"pid":45,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":25}]
+tane$ mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane$ top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":2,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":4,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane$ proc exec adminhello.tane
+denied: user may not read objects of domain admin (MAC policy; audited)
+tane$ file read admin-secret
+denied: user may not read objects of domain admin (MAC policy; audited)
+tane$ audit
+denied: user may not audit (MAC policy; audited)
+tane$ format
+denied: user may not format (MAC policy; audited)
+tane$ proc list | json
+[{"pid":38,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":39,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":51},{"pid":40,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":42},{"pid":41,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":46},{"pid":42,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":51},{"pid":44,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":31},{"pid":43,"parent":1,"name":"files","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":17},{"pid":45,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":25}]
+tane$ mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane$ top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":2,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":4,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane$ proc list | json
+[{"pid":38,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":39,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":51},{"pid":40,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":42},{"pid":41,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":46},{"pid":42,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":51},{"pid":44,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":31},{"pid":43,"parent":1,"name":"files","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":17},{"pid":45,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":25}]
+tane$ mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane$ top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":2,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":4,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane$ proc run hello
+started user process as pid 46 (ring 3, domain user, 12 frames)
+tane$ status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane$ proc wait 46
+Hello from Rust ring3. pid=46
+process 46 exited status 0 | domain user | cpu 0 ticks
+tane$ status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane$ proc list | json
+[{"pid":39,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":51},{"pid":40,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":42},{"pid":41,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":46},{"pid":42,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":51},{"pid":44,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":31},{"pid":43,"parent":1,"name":"files","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":17},{"pid":45,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":25},{"pid":46,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30}]
+tane$ proc output 46
+Hello from Rust ring3. pid=46
+tane$ proc list | json
+[{"pid":39,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":51},{"pid":40,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":42},{"pid":41,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":46},{"pid":42,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":51},{"pid":44,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":31},{"pid":43,"parent":1,"name":"files","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":17},{"pid":45,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":25},{"pid":46,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30}]
+tane$ mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane$ top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":2,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":4,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane$ proc list | json
+[{"pid":39,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":51},{"pid":40,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":42},{"pid":41,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":46},{"pid":42,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":51},{"pid":44,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":31},{"pid":43,"parent":1,"name":"files","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":17},{"pid":45,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":25},{"pid":46,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30}]
+tane$ mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane$ top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":2,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":4,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane$ proc run probe "denied"
+started user process as pid 47 (ring 3, domain user, 12 frames)
+tane$ status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane$ proc wait 47
+probe: privileged syscalls denied
+process 47 exited status 0 | domain user | cpu 0 ticks
+tane$ status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane$ proc list | json
+[{"pid":40,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":42},{"pid":41,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":46},{"pid":42,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":51},{"pid":44,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":31},{"pid":43,"parent":1,"name":"files","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":17},{"pid":45,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":25},{"pid":46,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":47,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34}]
+tane$ proc output 47
+probe: privileged syscalls denied
+tane$ proc list | json
+[{"pid":40,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":42},{"pid":41,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":46},{"pid":42,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":51},{"pid":44,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":31},{"pid":43,"parent":1,"name":"files","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":17},{"pid":45,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":25},{"pid":46,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":47,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34}]
+tane$ mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane$ top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":2,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":4,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane$ proc install echo echo.tane
+installed echo as echo.tane (90 bytes, label user)
+tane$ file list | json
+[{"slot":0,"label":"user","bytes":55,"generation":4,"name":"ring3-demo"},{"slot":1,"label":"user","bytes":0,"generation":1,"name":"ring3-cap"},{"slot":2,"label":"user","bytes":1,"generation":2,"name":"ring3-stale"},{"slot":3,"label":"user","bytes":0,"generation":1,"name":"ring3-held"},{"slot":6,"label":"user","bytes":90,"generation":1,"name":"echo.tane"}]
+tane$ proc list | json
+[{"pid":40,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":42},{"pid":41,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":46},{"pid":42,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":51},{"pid":44,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":31},{"pid":43,"parent":1,"name":"files","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":17},{"pid":45,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":25},{"pid":46,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":47,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34}]
+tane$ mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane$ top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":2,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":5,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane$ proc exec echo.tane "from persisted executable | still literal"
+started user process as pid 48 (ring 3, domain user, 12 frames)
+tane$ status | json
+[{"code":"success","operation":"proc exec","message":"completed"}]
+tane$ proc wait 48
+from persisted executable | still literal
+process 48 exited status 0 | domain user | cpu 0 ticks
+tane$ status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane$ proc list | json
+[{"pid":41,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":46},{"pid":42,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":51},{"pid":44,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":31},{"pid":43,"parent":1,"name":"files","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":17},{"pid":45,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":25},{"pid":46,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":47,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":48,"parent":1,"name":"echo.tane","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":42}]
+tane$ proc list | json
+[{"pid":41,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":46},{"pid":42,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":51},{"pid":44,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":31},{"pid":43,"parent":1,"name":"files","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":17},{"pid":45,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":25},{"pid":46,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":47,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":48,"parent":1,"name":"echo.tane","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":42}]
+tane$ mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane$ top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":2,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":5,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane$ file write bad.tane invalid-executable
+created bad.tane (18 bytes, label user)
+tane$ proc exec bad.tane
+error: invalid Tane executable header
+tane$ proc list | json
+[{"pid":41,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":46},{"pid":42,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":51},{"pid":44,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":31},{"pid":43,"parent":1,"name":"files","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":17},{"pid":45,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":25},{"pid":46,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":47,"parent":1,"name":"probe","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":34},{"pid":48,"parent":1,"name":"echo.tane","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":42}]
+tane$ mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane$ top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":2,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":6,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane$ 
+--- QEMU process-persist ---
+TANE OS / RUST BARE METAL
+Self-made BIOS loader + Rust kernel. External crates: 0.
+64-bit mode | VGA + COM1 | PS/2 keyboard | no heap
+RAM: 7 E820 entries | 16056 free 4 KiB frames (64224 KiB) above 1 MiB
+IDT: 32 exception handlers, #DF on IST1 | PIT timer 100 Hz
+Tasks: preemptive round robin, up to 8 tasks
+Protection: NX data | kernel text read-only | null page unmapped | CR0.WP
+MAC: enforcing compiled-in policy | shell domain admin (drop lowers it)
+Disk: TaneFS mounted, 8 files
+Network: unavailable (RTL8139 PCI device not found)
+Type help. English keyboard / ASCII input.
+READY
+tane> proc list | json
+[]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":2,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":6,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc exec echo.tane "fresh boot executable"
+started user process as pid 2 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc exec","message":"completed"}]
+tane> proc wait 2
+fresh boot executable
+process 2 exited status 0 | domain user | cpu 1 ticks
+tane> status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane> proc list | json
+[{"pid":2,"parent":1,"name":"echo.tane","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":22}]
+tane> proc list | json
+[{"pid":2,"parent":1,"name":"echo.tane","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":22}]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":2,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":6,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc exec adminhello.tane
+denied: user may not read objects of domain admin (MAC policy; audited)
+tane> proc list | json
+[{"pid":2,"parent":1,"name":"echo.tane","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":22}]
+tane> mem | json
+[{"usable":16056,"free":16056,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":2,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":6,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> 

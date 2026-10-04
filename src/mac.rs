@@ -159,6 +159,9 @@ pub enum Reason {
     Policy,
     /// The policy allows it, but the domain's resource limit is used up.
     Quota,
+    /// The domain policy allowed the class, but a process-local capability
+    /// did not authorize the requested operation or object identity.
+    Capability,
 }
 
 /// One denied request.

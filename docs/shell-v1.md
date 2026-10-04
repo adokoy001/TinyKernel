@@ -1,6 +1,6 @@
 # Tane Shell v1
 
-更新: 2026 10 04 / Tane OS 0.7
+更新: 2026 10 04 / Tane OS 0.8
 
 Tane OSの機能を、同じ名前・引数・権限で対話操作とスクリプトから使うための小さなシェルです。Rustの`core`だけで動き、ヒープ、外部crate、ホストのシェルを使いません。LinuxやPOSIXとの互換性を前提にしない、カーネル内のシェルタスクです。
 
@@ -99,12 +99,14 @@ echo "literal text" | save greeting
 
 | ソース | 列 |
 | --- | --- |
-| `task list` | `pid`、`name`、`domain`、`state`、`cpu_ticks`、`counter`、`stack` |
+| `task list` | `pid`、`name`、`domain`、`state`、`cpu_ticks`、`counter`、`stack`、`mode` |
 | `file list` | `slot`、`label`、`bytes`、`generation`、`name` |
 | `ops` | `name`、`effect`、`result`、`permission` |
 | `status` | `code`、`operation`、`message` |
 | `history` | `id`、`part`、`command` |
 | `vars` | `name`、`value` |
+| `proc programs` | `name`、`bytes` |
+| `proc list` | `pid`、`parent`、`name`、`domain`、`state`、`cpu_ticks`、`frames`、`output_bytes` |
 
 型付きレコードの上限は64行、8列、1セルの文字列はUTF-8で64バイトです。超過を黙って切り詰めません。`save`の結果はTaneFSの1ファイル上限4 KiBにも従います。
 
@@ -167,7 +169,7 @@ apply
 
 planは、単なるコマンド文字列の保存ではありません。作成ドメイン、その起動中だけ有効なストレージ全体の変更番号、対象が存在するか、存在する場合のslot・ラベル・サイズ・世代・チェックサムを固定します。既存ファイルは読み取り権限と内容のチェックサムを確認してから予定します。apply時も権限とチェックサムを確認し、同じ対象かを照合します。
 
-別のファイルへの書き込み、削除、format、再マウントも変更番号を進めるため、対象の見た目が同じでも古いplanを拒否します。adminで作ったplanを、`drop`後にuserとして表示・適用することもできません。
+別のファイルへの書き込み、削除、format、再マウントも変更番号を進めるため、対象の見た目が同じでも古いplanを拒否します。ユーザープロセスのsyscallによる変更も同じです。adminで作ったplanを、`drop`後にuserとして表示・適用することもできません。
 
 ```text
 plan file write stale "this must not be applied"
@@ -225,17 +227,54 @@ run stop.tsh
 
 QEMUの`--serial`モードではCtrl+AがQEMUに使われます。シェルの行頭操作にはHomeを使うか、Ctrl+Aを2回押してください。QEMU終了はCtrl+Aの後にXです。
 
-履歴は最近8行をメモリ内に保持し、`history`でも読めます。再起動では消えます。日本語IME、永続履歴、バックグラウンドジョブ、外部実行ファイルはありません。
+履歴は最近8行をメモリ内に保持し、`history`でも読めます。再起動では消えます。日本語IME、永続履歴、シェルのジョブ制御、POSIX互換の外部コマンドはありません。自作Tane形式の実行ファイルには、次の`proc`操作を使います。
 
 Tab補完はカーソルが行末にあり、引用・エスケープ・パイプを含まない入力に対応します。候補が1件なら補い、複数なら共通の部分を補うか候補を表示します。候補を実行することはありません。ファイル名の候補にも現在のドメインの可視性を使います。
 
 `drop`に成功すると、変数、入力履歴、保留中のplan、作業用レコードを消去します。adminのシェル状態を、そのままuserへ持ち越しません。
 
+## ユーザープロセスを操作する
+
+| 操作 | 意味 |
+| --- | --- |
+| `proc programs` | 同梱した自作Rustプログラムを調べる |
+| `proc run PROGRAM [TEXT]` | 同梱プログラムをring 3で起動する |
+| `proc install PROGRAM FILE` | 同梱プログラムを現在のドメインの権限でTaneFSへ保存する |
+| `proc exec FILE [TEXT]` | userにも読めるTane実行ファイルを読み込んで起動する |
+| `proc list` | 実行中と最近8件の終了結果を読む |
+| `proc wait PID` | 終了を待ち、出力と終了理由を読む |
+| `proc output PID` | 現在までの出力をコピーして読む |
+| `task kill PID` | userプロセスを終了する。従来の`kill PID`も使える |
+
+```text
+proc programs | json
+proc run hello
+proc list | select pid name domain state
+task list | select pid name domain mode
+```
+
+起動時に表示されたPIDで`let PID 番号`を実行してから、`proc wait $PID`や`proc output $PID`を使えます。PIDは起動ごとに変わるので、表示された番号を使ってください。
+
+`proc run`/`proc exec`は起動してプロンプトへ戻ります。引数は128バイトまでの1つの文字列で、シェル構文として再評価しません。引用を使って`proc run echo "text | still data"`のように渡せます。`proc run`/`proc exec`/`proc install`/`proc wait`をパイプラインのソースにはできません。状態の`proc programs`/`proc list`と出力の`proc output`は型付きパイプラインに対応します。
+
+```text
+proc output $PID | json
+proc list | where state == faulted | select pid name
+```
+
+出力は端末へ非同期に書かず、プロセスごとに生存期間合計1024バイトまで保持します。output/waitは読み出しで、保持領域を空にはしません。改行・タブ・表示可能ASCII以外のバイトは`\xNN`として表示し、プロセスの制御コードを端末へ渡しません。最近8件の終了結果は再起動で消えます。
+
+`proc wait`で正常なexit 0なら`success`、非0終了・例外・killなら`error`になります。Ctrl+Cはwaitだけを取り消し、実行中のプロセスは残ります。スクリプトで`proc run`しただけでは、そのプログラムの終了結果を待ちません。必要なら続く行でwaitします。
+
+adminのシェルから起動しても、プロセスは必ずuserドメインです。`proc exec`は呼び出し元と実行先userの両方の読み取り権限を確認します。メモリ配置、ファイルhandle、プログラムの作り方は[ユーザープロセスv1](process-v1.md)を参照してください。
+
 ## カーネル側の境界
 
 MAC・ファイルラベル・資源上限は、正式名、別名、パイプライン、スクリプト、applyからの要求でも同じカーネルの入口で確認します。userからのpingはARP/NDPを送る前に拒否します。変数や保存したplanを権限そのものとしては扱いません。
 
-ただしすべてのコードはring 0で動き、アドレス空間を共有します。現在のデモ用taskはカーネル内の関数で、悪意ある機械語を隔離して実行する環境ではありません。ユーザーモード、独立したページテーブル、システムコール、プロセス分離は未実装です。
+シェル・ドライバ・`task spawn`のデモ用taskは、カーネル内の信頼済みring 0コードです。`proc`から起動したプログラムにはring 3、独立したCR3・物理ページ、RX/NX、userスタックのガードを使い、syscallがポインタ全体の範囲と権限を検査します。user側のCPU例外はそのプロセスだけを終了します。
+
+ファイルのMACはadmin/userドメイン単位です。user同士のファイルやプロセス出力をPID単位で非公開にするものではありません。ファイルhandleは発行したPIDだけに属し、固定したread/write権限と対象identityを使います。カーネルコード自身の直接アクセスは、これらのuser境界の対象外です。
 
 ネットワークはRTL8139、固定IPv4/IPv6、ARP/NDP、ICMP echoの範囲です。UDP、TCP、DNS、DHCP、ソケット、POSIX互換はありません。これはシェルが存在することによって追加される機能ではなく、別に実装するカーネル機能です。
 
@@ -247,6 +286,7 @@ sh tests/host.sh
 python3 tests/smoke.py
 python3 tests/network.py
 python3 tests/shell.py
+python3 tests/process.py
 ```
 
-hostテストは構文・上限・展開値による注入の防止、registryの一貫性、型付きレコード、編集、planの状態照合を確認します。`tests/shell.py`は実際にBIOSからQEMUを起動し、COM1の入力とATAディスクを使って、パイプライン、引用・変数、save、スクリプトの停止・取消、planの失効、権限を確認します。結果は`build/`内のsummaryとserial記録に残します。
+hostテストは構文・上限・展開値による注入の防止、registryの一貫性、型付きレコード、編集、planの状態照合を確認します。`tests/shell.py`は実際にBIOSからQEMUを起動し、COM1の入力とATAディスクを使って、パイプライン、引用・変数、save、スクリプトの停止・取消、planの失効、権限を確認します。`tests/process.py`はring 3と独立アドレス空間、syscall、handle、例外時の終了と資源回収を確認します。結果は`build/`内のsummaryとserial記録に残します。

@@ -24,9 +24,8 @@ pub struct Denied {
     pub quota: Option<Exceeded>,
 }
 
-fn deny(op: Op, object: Option<Domain>, target: Option<u64>, quota: Option<Exceeded>) -> Denied {
+fn deny_as(subject: Domain, op: Op, object: Option<Domain>, target: Option<u64>, quota: Option<Exceeded>) -> Denied {
     let (pid, _) = tasks::current();
-    let subject = tasks::current_domain();
     let reason = if quota.is_some() { Reason::Quota } else { Reason::Policy };
     let record = Record { tick: interrupts::ticks(), pid, subject, op, object, target, reason };
     unsafe { (*addr_of_mut!(AUDIT)).record(record); }
@@ -41,7 +40,7 @@ pub fn check(op: Op, object: Option<Domain>, target: Option<u64>) -> Result<(), 
         if mac::allowed(tasks::current_domain(), op, object) {
             return Ok(());
         }
-        Err(deny(op, object, target, None))
+        Err(deny_as(tasks::current_domain(), op, object, target, None))
     })
 }
 
@@ -51,8 +50,37 @@ pub fn charge(op: Op, tasks: u32, frames: u32) -> Result<(), Denied> {
     interrupts::without(|| {
         let domain = tasks::current_domain();
         unsafe { (*addr_of_mut!(ACCOUNTS)).charge(domain, tasks, frames) }
-            .map_err(|exceeded| deny(op, None, None, Some(exceeded)))
+            .map_err(|exceeded| deny_as(domain, op, None, None, Some(exceeded)))
     })
+}
+
+/// Check a destination domain as well as the current caller. The caller's
+/// PID remains attached to a refusal; the subject is the checked domain.
+pub fn check_domain(subject: Domain, op: Op, object: Option<Domain>, target: Option<u64>) -> Result<(), Denied> {
+    interrupts::without(|| {
+        if mac::allowed(subject, op, object) { Ok(()) }
+        else { Err(deny_as(subject, op, object, target, None)) }
+    })
+}
+
+/// Charge the immutable child domain, rather than inheriting the privileged
+/// creator's account. Callers authorize Spawn before this all-or-nothing step.
+pub fn charge_domain(domain: Domain, op: Op, tasks: u32, frames: u32) -> Result<(), Denied> {
+    interrupts::without(|| unsafe { (*addr_of_mut!(ACCOUNTS)).charge(domain, tasks, frames) }
+        .map_err(|exceeded| deny_as(domain, op, None, None, Some(exceeded))))
+}
+
+/// A process tried to use a revoked, foreign or insufficient file handle.
+/// This gate is distinct from domain MAC; tokens convey an immutable subset
+/// of file authority even when the domain policy would allow an operation.
+pub fn deny_capability(op: Op, object: Option<Domain>, target: Option<u64>) {
+    interrupts::without(|| {
+        let (pid, _) = tasks::current();
+        let record = Record { tick: interrupts::ticks(), pid,
+            subject: tasks::current_domain(), op, object, target,
+            reason: Reason::Capability };
+        unsafe { (*addr_of_mut!(AUDIT)).record(record); }
+    });
 }
 
 /// Return resources to the domain that was charged for them.
@@ -64,7 +92,7 @@ pub fn release(domain: Domain, tasks: u32, frames: u32) {
 pub fn check_file_quota(files_owned: u32) -> Result<(), Denied> {
     interrupts::without(|| {
         resources::check_files(tasks::current_domain(), files_owned)
-            .map_err(|exceeded| deny(Op::Create, None, None, Some(exceeded)))
+            .map_err(|exceeded| deny_as(tasks::current_domain(), Op::Create, None, None, Some(exceeded)))
     })
 }
 

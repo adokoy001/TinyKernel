@@ -3,7 +3,7 @@
 set -eu
 cd "$(dirname "$0")/.."
 mkdir -p build
-for module in shell frames sched mac fs inet pci rtl8139 shell_lang operations records editor variables; do
+for module in shell frames sched mac fs inet pci rtl8139 shell_lang operations records editor variables executable usermem handles user_abi; do
     rustc --edition=2021 --test "src/$module.rs" -o "build/$module-tests"
     "./build/$module-tests" -q
 done
@@ -13,3 +13,12 @@ rustc --edition=2021 --test tests/host_netstack.rs -o build/netstack-tests
 ./build/netstack-tests -q
 rustc --edition=2021 --test tests/host_plans.rs -o build/plans-tests
 ./build/plans-tests -q
+# Compile without --test so the production AddressSpace implementation is
+# exercised against the harness's aligned host allocator and paging stub.
+rustc --edition=2021 tests/host_usermem.rs -o build/usermem-owned-tests
+./build/usermem-owned-tests
+
+rustc --edition=2021 --test tests/host_storage.rs -o build/storage-tests
+./build/storage-tests -q
+
+python3 tests/build_guard.py

@@ -13,7 +13,11 @@ SECTIONS
     . = ALIGN(4096);
     __rodata_end = .;
     .data : { *(.data .data.*) *(.got .got.*) }
-    .bss ALIGN(16) (NOLOAD) : {
+    __loaded_kernel_end = .;
+    /* Zeroed RAM is not part of the BIOS payload. Keep it above the fixed
+     * shell stack; the frame allocator starts after __kernel_end. */
+    . = 0x100000;
+    .bss (NOLOAD) : {
         __bss_start = .;
         *(.bss .bss.*) *(COMMON)
         __bss_end = .;
@@ -21,5 +25,6 @@ SECTIONS
     __kernel_end = .;
     /DISCARD/ : { *(.eh_frame*) *(.comment*) *(.note*) *(.debug*) }
     ASSERT(_start == 0x10000, "Kernel entry must be at 0x10000")
-    ASSERT(__kernel_end <= 0x80000, "Kernel overlaps reserved stack")
+    ASSERT(__loaded_kernel_end <= 0x80000, "Loaded kernel overlaps reserved stack")
+    ASSERT(__kernel_end <= 0x200000, "Kernel BSS exceeds reserved low RAM")
 }

@@ -1,0 +1,46 @@
+Tane OS 0.8 ring 3 QEMU integration test
+Image SHA256: 442b5de5aff35c58997d84a2ad973382462947e7b7354c189964c74d89ab320a
+Elapsed: 25.36s
+Transport (process): local pipes (Unix sockets unavailable or disabled)
+Transport (process-persist): local pipes (Unix sockets unavailable or disabled)
+PASS: Ring 3 program catalog and clean user resource baseline
+PASS: Compiled Rust runs in user domain; literal arguments and captured output survive exit
+PASS: User sleep syscall blocks and resumes through the scheduler
+PASS: Same virtual data address remains private under timer preemption and reused pages start zeroed
+PASS: Busy ring 3 loops are preemptible; immutable user quota rejects a third allocation atomically
+PASS: Ctrl-C cancels waiting; explicit kill captures outcome and releases every frame
+PASS: Hardware kernel-read terminates only its user process with vector 14
+PASS: Hardware kernel-data terminates only its user process with vector 14
+PASS: Hardware kernel-write terminates only its user process with vector 14
+PASS: Hardware kernel-data-write terminates only its user process with vector 14
+PASS: Hardware vga terminates only its user process with vector 14
+PASS: Hardware vga-read terminates only its user process with vector 14
+PASS: Hardware code-write terminates only its user process with vector 14
+PASS: Hardware nx terminates only its user process with vector 14
+PASS: Hardware stack-nx terminates only its user process with vector 14
+PASS: Hardware null terminates only its user process with vector 14
+PASS: Hardware guard terminates only its user process with vector 14
+PASS: Hardware stack-end terminates only its user process with vector 14
+PASS: Hardware cli terminates only its user process with vector 13
+PASS: Hardware hlt terminates only its user process with vector 13
+PASS: Hardware in terminates only its user process with vector 13
+PASS: Hardware out terminates only its user process with vector 13
+PASS: Hardware int48 terminates only its user process with vector 13
+PASS: Hardware sse terminates only its user process with vector 7
+PASS: Hardware x87 terminates only its user process with vector 7
+PASS: Hardware ud2 terminates only its user process with vector 6
+PASS: Hardware syscall terminates only its user process with vector 6
+PASS: Hardware sysenter terminates only its user process with vector 6
+PASS: Hardware fsgsbase terminates only its user process with vector 6
+PASS: Hardware xsave terminates only its user process with vector 6
+PASS: Syscall pointer, overflow, size and number validation has no effect; privileged calls are audited
+PASS: Ring 3 file mutation invalidates a staged shell plan; rejection retains user data and a fresh plan commits
+PASS: User file capabilities enforce rights, reject closed handles and validate input before storage mutation
+PASS: File generations invalidate stale capabilities and reused slots never revive closed tokens
+PASS: Capabilities are scoped to the issuing live PID even when a second process knows the token
+PASS: Admin cannot transfer its file-read authority into an unprivileged process or executable mapping
+PASS: Malformed process commands and arguments are rejected before allocation or execution
+PASS: Dropped shell can start user programs while admin storage, audit and format remain protected
+PASS: User-labelled TaneFS executables load real code; invalid headers never allocate process resources
+PASS: Saved user executable survives a fresh QEMU boot and destination access checks remain enforced
+RESULT: PASS

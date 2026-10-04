@@ -12,6 +12,7 @@ use crate::mac::{self, Domain, Op};
 use crate::security::{self, Denied};
 use crate::sched::{self, State};
 use crate::shell::TaskKind;
+use crate::process::{self, ExitReason};
 use core::mem::size_of;
 use core::ptr::{addr_of, addr_of_mut, read_volatile, write_volatile};
 use core::sync::atomic::{AtomicU64, Ordering};
@@ -37,10 +38,15 @@ struct Task {
     cpu_ticks: u64,
     /// MAC label: the subject domain, inherited from the creating task.
     domain: Domain,
+    /// The immutable domain charged at creation, even if the running task
+    /// subsequently lowers its access label.
+    charged_domain: Domain,
+    root: u64,
+    user: bool,
 }
 
 impl Task {
-    const EMPTY: Task = Task { pid: 0, name: "", context: 0, stack: 0, owns_stack: false, cpu_ticks: 0, domain: Domain::Kernel };
+    const EMPTY: Task = Task { pid: 0, name: "", context: 0, stack: 0, owns_stack: false, cpu_ticks: 0, domain: Domain::Kernel, charged_domain: Domain::Kernel, root: 0, user: false };
 }
 
 static mut STATES: [State; MAX_TASKS] = [State::Free; MAX_TASKS];
@@ -55,6 +61,7 @@ struct IdleStack([u8; 8192]);
 static mut IDLE_STACK: IdleStack = IdleStack([0; 8192]);
 
 /// A snapshot of one task for `ps`.
+#[derive(Clone, Copy)]
 pub struct Info {
     pub pid: u32,
     pub name: &'static str,
@@ -64,6 +71,8 @@ pub struct Info {
     pub counter: Option<u64>,
     pub stack: u64,
     pub owns_stack: bool,
+    pub user: bool,
+    pub frames: u32,
 }
 
 /// Callers hold IF=0: interrupt handlers, or code inside `interrupts::without`.
@@ -76,11 +85,12 @@ unsafe fn table() -> (&'static mut [State; MAX_TASKS], &'static mut [Task; MAX_T
 pub unsafe fn init() {
     let (states, tasks) = table();
     write_volatile(BOOT_STACK_BASE as *mut u64, CANARY);
-    tasks[SHELL] = Task { pid: 1, name: "shell", stack: BOOT_STACK_BASE, domain: Domain::Admin, ..Task::EMPTY };
+    let root = crate::paging::kernel_root();
+    tasks[SHELL] = Task { pid: 1, name: "shell", stack: BOOT_STACK_BASE, domain: Domain::Admin, root, ..Task::EMPTY };
     states[SHELL] = State::Ready;
     let base = addr_of!(IDLE_STACK) as u64;
     let context = prepare(base, size_of::<IdleStack>() as u64, idle_main, 0);
-    tasks[IDLE] = Task { pid: 0, name: "idle", context, stack: base, ..Task::EMPTY };
+    tasks[IDLE] = Task { pid: 0, name: "idle", context, stack: base, root, ..Task::EMPTY };
     states[IDLE] = State::Ready;
 }
 
@@ -105,6 +115,48 @@ pub fn current() -> (u32, &'static str) {
 
 pub fn current_domain() -> Domain {
     interrupts::without(|| unsafe { (*addr_of!(TASKS))[CURRENT].domain })
+}
+
+/// Stable table slot while IF=0. Syscall capability tables use the same
+/// slot together with its PID, so a reused slot cannot reuse old handles.
+pub fn current_slot() -> usize { unsafe { CURRENT } }
+
+pub fn is_user() -> bool {
+    unsafe { (*addr_of!(TASKS))[CURRENT].user }
+}
+
+pub fn current_cpu_ticks() -> u64 {
+    unsafe { (*addr_of!(TASKS))[CURRENT].cpu_ticks }
+}
+
+/// Reclaim completed tasks after the CPU has returned to another stack.
+/// The same rule is used in switches and before shell resource snapshots.
+pub fn reap_exited() {
+    interrupts::without(|| unsafe {
+        let current = CURRENT;
+        let (states, tasks) = table();
+        for slot in 0..MAX_TASKS {
+            if states[slot] == State::Exited && slot != current {
+                release(states, tasks, slot);
+            }
+        }
+    });
+}
+
+/// Copy one slot. Called under IF=0 by the process metadata snapshot.
+pub(crate) fn slot_info(slot: usize) -> Option<Info> {
+    unsafe {
+        if slot >= MAX_TASKS || (*addr_of!(STATES))[slot] == State::Free { return None; }
+        let task = &(*addr_of!(TASKS))[slot];
+        Some(Info {
+            pid: task.pid, name: task.name, domain: task.domain,
+            state: if slot == CURRENT { "running" } else { (*addr_of!(STATES))[slot].name() },
+            cpu_ticks: task.cpu_ticks,
+            counter: if task.owns_stack && !task.user { Some(COUNTERS[slot].load(Ordering::Relaxed)) } else { None },
+            stack: task.stack, owns_stack: task.owns_stack, user: task.user,
+            frames: if task.owns_stack { STACK_FRAMES as u32 + if task.user { crate::usermem::SPACE_FRAMES as u32 } else { 0 } } else { 0 },
+        })
+    }
 }
 
 /// Lower the current task's domain. Raising it is refused by the policy.
@@ -145,18 +197,55 @@ pub fn switch(frame: *mut Frame, prefer: Option<usize>) -> *mut Frame {
             }),
         };
         CURRENT = next;
+        // Every root retains supervisor mappings for all kernel stacks and
+        // tables. The CPU leaves an exiting process's stack only after this
+        // dispatcher returns; release() therefore skips the current slot.
+        crate::paging::activate(tasks[next].root);
+        let top = if next == SHELL { 0x90000 }
+            else if next == IDLE { tasks[next].stack + size_of::<IdleStack>() as u64 }
+            else { tasks[next].stack + STACK_BYTES };
+        interrupts::set_rsp0(top);
         tasks[next].context as *mut Frame
     }
 }
 
 unsafe fn release(states: &mut [State; MAX_TASKS], tasks: &mut [Task; MAX_TASKS], slot: usize) {
     if tasks[slot].owns_stack {
+        if tasks[slot].user { process::reap(slot); }
+        // Zero a released kernel stack too: it can contain private syscall
+        // arguments even when the user address space has already been wiped.
+        core::ptr::write_bytes(tasks[slot].stack as *mut u8, 0, STACK_BYTES as usize);
         let freed = crate::with_frames(|frames| frames.free_contiguous(tasks[slot].stack, STACK_FRAMES));
         assert!(freed.is_ok(), "task stack frames were not allocated");
-        security::release(tasks[slot].domain, 1, STACK_FRAMES as u32);
+        security::release(tasks[slot].charged_domain, 1,
+            STACK_FRAMES as u32 + if tasks[slot].user { crate::usermem::SPACE_FRAMES as u32 } else { 0 });
     }
     tasks[slot] = Task::EMPTY;
     states[slot] = State::Free;
+}
+
+/// Syscall paths already entered with IF=0. They must switch the saved
+/// user frame directly, never STI or create a second software interrupt.
+pub fn yield_current(frame: *mut Frame) -> *mut Frame { switch(frame, None) }
+
+pub fn sleep_current(frame: *mut Frame, milliseconds: u64) -> *mut Frame {
+    let quantum = 1000 / interrupts::TIMER_HZ;
+    let delay = milliseconds / quantum + u64::from(milliseconds % quantum != 0);
+    let deadline = interrupts::ticks().saturating_add(delay);
+    unsafe { table().0[CURRENT] = State::Sleeping(deadline); }
+    switch(frame, None)
+}
+
+pub fn terminate_current(frame: *mut Frame, reason: ExitReason) -> *mut Frame {
+    unsafe {
+        let slot = CURRENT;
+        let task = &(*addr_of!(TASKS))[slot];
+        assert!(task.user, "only a user process may use user termination");
+        process::finish(slot, task.cpu_ticks, reason);
+        crate::user_syscalls::revoke(task.pid);
+        table().0[slot] = State::Exited;
+    }
+    switch(frame, None)
 }
 
 /// Timer IRQ: account the tick, wake sleepers, and preempt.
@@ -221,13 +310,16 @@ pub enum SpawnError {
 
 pub fn spawn(kind: TaskKind) -> Result<u32, SpawnError> {
     security::check(Op::Spawn, None, None).map_err(SpawnError::Denied)?;
+    reap_exited();
     interrupts::without(|| unsafe {
-        let (states, tasks) = table();
-        let slot = states.iter().position(|state| *state == State::Free)
+        let slot = (*addr_of!(STATES)).iter().position(|state| *state == State::Free)
             .ok_or(SpawnError::Failed("task table is full (8 tasks)"))?;
+        let pid = NEXT_PID;
+        let next_pid = pid.checked_add(1).ok_or(SpawnError::Failed("PID space is exhausted"))?;
+        let domain = (*addr_of!(TASKS))[CURRENT].domain;
         security::charge(Op::Spawn, 1, STACK_FRAMES as u32).map_err(SpawnError::Denied)?;
         let Some(stack) = crate::with_frames(|frames| frames.allocate_contiguous(STACK_FRAMES)) else {
-            security::release(tasks[CURRENT].domain, 1, STACK_FRAMES as u32);
+            security::release(domain, 1, STACK_FRAMES as u32);
             return Err(SpawnError::Failed("no free physical frames for a stack"));
         };
         // Object reuse: a new stack never shows a previous owner's data.
@@ -240,12 +332,57 @@ pub fn spawn(kind: TaskKind) -> Result<u32, SpawnError> {
             TaskKind::Once => once_main,
         };
         COUNTERS[slot].store(0, Ordering::Relaxed);
-        let pid = NEXT_PID;
-        NEXT_PID += 1;
         let context = prepare(stack, STACK_BYTES, entry, slot as u64);
-        let domain = tasks[CURRENT].domain;
-        tasks[slot] = Task { pid, name: kind.name(), context, stack, owns_stack: true, cpu_ticks: 0, domain };
+        let (states, tasks) = table();
+        tasks[slot] = Task { pid, name: kind.name(), context, stack, owns_stack: true, cpu_ticks: 0, domain,
+            charged_domain: domain, root: crate::paging::kernel_root(), user: false };
         states[slot] = State::Ready;
+        NEXT_PID = next_pid;
+        Ok(pid)
+    })
+}
+
+/// Spawn a ring 3 image into a distinct address space. The caller's Spawn
+/// gate and the destination User quota are intentionally separate.
+pub(crate) fn spawn_user(image: &crate::executable::Image<'_>, args: &[u8],
+    task_name: &'static str, image_name: &str) -> Result<u32, SpawnError> {
+    security::check(Op::Spawn, None, None).map_err(SpawnError::Denied)?;
+    reap_exited();
+    interrupts::without(|| unsafe {
+        let slot = (*addr_of!(STATES)).iter().position(|state| *state == State::Free)
+            .ok_or(SpawnError::Failed("task table is full (8 tasks)"))?;
+        let pid = NEXT_PID;
+        let next_pid = pid.checked_add(1).ok_or(SpawnError::Failed("PID space is exhausted"))?;
+        let frames = STACK_FRAMES as u32 + crate::usermem::SPACE_FRAMES as u32;
+        security::charge_domain(Domain::User, Op::Spawn, 1, frames).map_err(SpawnError::Denied)?;
+        let Some(stack) = crate::with_frames(|allocator| allocator.allocate_contiguous(STACK_FRAMES)) else {
+            security::release(Domain::User, 1, frames);
+            return Err(SpawnError::Failed("no free physical frames for a kernel stack"));
+        };
+        core::ptr::write_bytes(stack as *mut u8, 0, STACK_BYTES as usize);
+        let space = match crate::usermem::AddressSpace::create(image, args) {
+            Ok(space) => space,
+            Err(message) => {
+                let freed = crate::with_frames(|allocator| allocator.free_contiguous(stack, STACK_FRAMES));
+                assert!(freed.is_ok(), "new kernel stack could not be freed");
+                security::release(Domain::User, 1, frames);
+                return Err(SpawnError::Failed(message));
+            }
+        };
+        write_volatile(stack as *mut u64, CANARY);
+        // CPU ring transition uses RSP0, not this initial Frame's address.
+        let frame = (stack + STACK_BYTES - size_of::<Frame>() as u64) as *mut Frame;
+        let (argptr, arglen) = space.argument();
+        write_volatile(frame, Frame::user(space.entry(), space.initial_rsp(), argptr, arglen));
+        let root = space.root();
+        let parent = (*addr_of!(TASKS))[CURRENT].pid;
+        process::install(slot, pid, parent, image_name, space);
+        let (states, tasks) = table();
+        tasks[slot] = Task { pid, name: task_name, context: frame as u64, stack, owns_stack: true,
+            cpu_ticks: 0, domain: Domain::User, charged_domain: Domain::User, root, user: true };
+        states[slot] = State::Ready;
+        COUNTERS[slot].store(0, Ordering::Relaxed);
+        NEXT_PID = next_pid;
         Ok(pid)
     })
 }
@@ -257,17 +394,28 @@ pub enum KillError {
 
 pub fn kill(pid: u32) -> Result<&'static str, KillError> {
     interrupts::without(|| unsafe {
-        let (states, tasks) = table();
         let slot = (0..MAX_TASKS)
-            .find(|&slot| states[slot] != State::Free && tasks[slot].pid == pid)
+            .find(|&slot| (*addr_of!(STATES))[slot] != State::Free && (*addr_of!(TASKS))[slot].pid == pid)
             .ok_or(KillError::Failed("no such task"))?;
         if slot == CURRENT {
             return Err(KillError::Failed("a task cannot kill itself"));
         }
+        if slot == SHELL {
+            return Err(KillError::Failed("the shell cannot be killed"));
+        }
+        if (*addr_of!(STATES))[slot] == State::Exited {
+            return Err(KillError::Failed("task has already exited"));
+        }
+        let victim = (*addr_of!(TASKS))[slot];
         // The idle task is labelled kernel, so the policy refuses it.
-        security::check(Op::Kill, Some(tasks[slot].domain), Some(pid as u64)).map_err(KillError::Denied)?;
+        security::check(Op::Kill, Some(victim.domain), Some(pid as u64)).map_err(KillError::Denied)?;
         // The shell is running this command, so the victim is not on the CPU.
-        let name = tasks[slot].name;
+        let name = victim.name;
+        if victim.user {
+            process::finish(slot, victim.cpu_ticks, ExitReason::Killed);
+            crate::user_syscalls::revoke(victim.pid);
+        }
+        let (states, tasks) = table();
         release(states, tasks, slot);
         Ok(name)
     })
@@ -301,9 +449,11 @@ pub fn list(mut each: impl FnMut(&Info)) {
                 domain: task.domain,
                 state: if slot == CURRENT { "running" } else { states[slot].name() },
                 cpu_ticks: task.cpu_ticks,
-                counter: if task.owns_stack { Some(COUNTERS[slot].load(Ordering::Relaxed)) } else { None },
+                counter: if task.owns_stack && !task.user { Some(COUNTERS[slot].load(Ordering::Relaxed)) } else { None },
                 stack: task.stack,
                 owns_stack: task.owns_stack,
+                user: task.user,
+                frames: if task.owns_stack { STACK_FRAMES as u32 + if task.user { crate::usermem::SPACE_FRAMES as u32 } else { 0 } } else { 0 },
             });
         }
     });

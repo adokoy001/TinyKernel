@@ -42,6 +42,22 @@ pub fn nx_enabled() -> bool {
     NX_ENABLED.load(Ordering::Relaxed)
 }
 
+/// The kernel's original address space. Process roots share its supervisor
+/// page directory, never a user-accessible alias of the kernel mapping.
+pub fn kernel_root() -> u64 {
+    addr_of!(PML4) as u64
+}
+
+pub fn kernel_pd() -> u64 {
+    addr_of!(PD) as u64
+}
+
+/// Change address space while executing in the shared supervisor mapping.
+/// The caller must own a complete, aligned root and serialize scheduling.
+pub unsafe fn activate(root: u64) {
+    asm!("mov cr3, {}", in(reg) root, options(nostack, preserves_flags));
+}
+
 /// Build and load the hardened tables. Call once, with interrupts disabled.
 pub unsafe fn init() {
     let extended = __cpuid(0x8000_0000).eax;

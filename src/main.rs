@@ -14,8 +14,10 @@ macro_rules! kprintln {
 
 mod ata;
 mod editor;
+mod executable;
 mod frames;
 mod fs;
+mod handles;
 mod interrupts;
 mod inet;
 mod mac;
@@ -25,6 +27,7 @@ mod operations;
 mod paging;
 mod pci;
 mod plans;
+mod process;
 mod records;
 mod resources;
 mod rtl8139;
@@ -35,6 +38,10 @@ mod shell_lang;
 mod shell_runtime;
 mod storage;
 mod tasks;
+mod user_images;
+mod user_abi;
+mod user_syscalls;
+mod usermem;
 mod variables;
 
 use core::arch::asm;
@@ -55,9 +62,8 @@ const SERIAL: u16 = 0x3f8;
 const E820_COUNT: *const u16 = 0x5000 as *const u16;
 const E820_ENTRIES: *const E820Entry = 0x5010 as *const E820Entry;
 const E820_MAX: usize = 64;
-/// Frames below 1 MiB hold the kernel, its stack, BIOS data and the VGA
-/// buffer; the allocator only hands out RAM from here up to 1 GiB, the
-/// identity-mapped limit.
+/// The low MiB contains BIOS, the loaded kernel, VGA and the boot stack.
+/// BSS begins at 1 MiB; its rounded end is also reserved from allocation.
 const LOW_MEMORY_END: u64 = 0x100000;
 const FRAME_WORDS: usize = 4096;
 type Frames = FrameAllocator<FRAME_WORDS>;
@@ -97,6 +103,7 @@ extern "C" {
     static mut __bss_start: u8;
     static mut __bss_end: u8;
     static __kernel_end: u8;
+    static __loaded_kernel_end: u8;
 }
 
 // The BIOS loader calls this address with paging on, IF=0, and a valid stack.
@@ -115,6 +122,27 @@ pub extern "C" fn _start() -> ! {
         outb(0x21, 0xff);
         outb(0xa1, 0xff);
         paging::init();
+        // Until an extended CPU-state ABI exists, hardware prevents user
+        // programs from using x87/MMX/SSE. The build checks kernel code too.
+        let mut cr0: u64;
+        asm!("mov {}, cr0", out(reg) cr0, options(nomem, nostack, preserves_flags));
+        cr0 |= (1 << 3) | (1 << 1); // TS + MP: unsupported state traps as #NM.
+        asm!("mov cr0, {}", in(reg) cr0, options(nostack, preserves_flags));
+        let mut cr4: u64;
+        asm!("mov {}, cr4", out(reg) cr4, options(nomem, nostack, preserves_flags));
+        cr4 &= !((1 << 16) | (1 << 18)); // No FSGSBASE or XSAVE/AVX ABI.
+        asm!("mov cr4, {}", in(reg) cr4, options(nostack, preserves_flags));
+        for msr in [0xc000_0100u32, 0xc000_0101, 0xc000_0102] {
+            asm!("wrmsr", in("ecx") msr, in("eax") 0u32, in("edx") 0u32, options(nostack));
+        }
+        let (efer_low, efer_high): (u32, u32);
+        asm!("rdmsr", in("ecx") 0xc000_0080u32, out("eax") efer_low, out("edx") efer_high, options(nostack));
+        // int 0x80 is the sole userspace entry ABI; inherited firmware MSRs
+        // must not enable alternate entries into an unprepared kernel stack.
+        asm!("wrmsr", in("ecx") 0xc000_0080u32, in("eax") efer_low & !1, in("edx") efer_high, options(nostack));
+        if core::arch::x86_64::__cpuid(1).edx & (1 << 11) != 0 {
+            asm!("wrmsr", in("ecx") 0x174u32, in("eax") 0u32, in("edx") 0u32, options(nostack));
+        }
         serial_init();
     }
     console().clear();
@@ -124,7 +152,8 @@ pub extern "C" fn _start() -> ! {
     kprintln!("Self-made BIOS loader + Rust kernel. External crates: 0.");
     kprintln!("64-bit mode | VGA + COM1 | PS/2 keyboard | no heap");
     let map = e820_map();
-    with_frames(|frames| frames.init(map, LOW_MEMORY_END));
+    let reserved_end = ((addr_of!(__kernel_end) as u64 + FRAME_SIZE - 1) & !(FRAME_SIZE - 1)).max(LOW_MEMORY_END);
+    with_frames(|frames| frames.init(map, reserved_end));
     let usable = with_frames(|frames| frames.usable_frames());
     kprintln!("RAM: {} E820 entries | {} free 4 KiB frames ({} KiB) above 1 MiB",
         map.len(), usable, usable as u64 * FRAME_SIZE / 1024);
@@ -363,7 +392,7 @@ pub(crate) fn execute_action(action: Action<'_>, keyboard: &mut Keyboard) -> Exe
             shell_runtime::help(&[]);
         }
         Action::About => {
-            kprintln!("Tane OS 0.7 - a small original Rust kernel with Tane Shell.");
+            kprintln!("Tane OS 0.8 - an original Rust kernel with isolated user processes.");
             kprintln!("No Linux code, GRUB, external crates, libc, or host OS calls.");
             kprintln!("Firmware loads our 512-byte boot sector; it loads this kernel.");
             kprintln!("Ring 0, own GDT/TSS/IDT, PIT at {} Hz, E820 RAM in 4 KiB frames.", interrupts::TIMER_HZ);
@@ -372,14 +401,17 @@ pub(crate) fn execute_action(action: Action<'_>, keyboard: &mut Keyboard) -> Exe
             kprintln!("ATA disk with TaneFS: labelled, checksummed files that survive reboots.");
             kprintln!("RTL8139, ARP/IPv4/ICMP, NDP/IPv6/ICMPv6; static network configuration.");
             kprintln!("Tane Shell: bounded editor, typed records, pipelines, preview and explicit apply.");
-            kprintln!("CPU exceptions print registers; all tasks share ring 0 and one address space.");
+            kprintln!("Kernel tasks use ring 0; user processes use ring 3 and separate address spaces.");
+            kprintln!("User faults terminate only the process. Bounded int 0x80 syscalls enforce MAC.");
+            kprintln!("FPU/SIMD user instructions are unsupported and trap as #NM.");
         }
         Action::Memory => {
-            let end = addr_of!(__kernel_end) as usize;
+            let end = addr_of!(__kernel_end) as u64;
             kprintln!("Page tables: in kernel BSS (the boot sector's at 0x1000..0x4000 are retired)");
             kprintln!("E820 table:  0x5000..0x5610 (written by the boot sector)");
             kprintln!("Boot sector: 0x7c00..0x7e00");
-            kprintln!("Kernel:      0x10000..0x{:x} ({} bytes incl. BSS)", end, end - 0x10000);
+            kprintln!("Kernel image: 0x10000..0x{:x}", addr_of!(__loaded_kernel_end) as u64);
+            kprintln!("Kernel BSS:   0x100000..0x{:x}; frames reserved through 0x{:x}", end, (end + FRAME_SIZE - 1) & !(FRAME_SIZE - 1));
             kprintln!("Shell stack: 0x80000..0x90000 (grows down)");
             kprintln!("VGA text:    0xb8000");
             kprintln!("First 1 GiB identity mapped: 4 KiB pages below 2 MiB, then 2 MiB pages.");
@@ -546,7 +578,7 @@ pub(crate) fn execute_action(action: Action<'_>, keyboard: &mut Keyboard) -> Exe
                     if let Some(object) = record.object {
                         write!(console(), " {} object", object.name()).ok();
                     }
-                    let reason = match record.reason { mac::Reason::Policy => "policy", mac::Reason::Quota => "quota" };
+                    let reason = match record.reason { mac::Reason::Policy => "policy", mac::Reason::Quota => "quota", mac::Reason::Capability => "capability" };
                     match (record.op, record.target) {
                         (Op::Kill, Some(pid)) => kprintln!(" (pid {}) DENIED by {}", pid, reason),
                         (Op::Free, Some(address)) => kprintln!(" (0x{:x}) DENIED by {}", address, reason),
@@ -688,10 +720,107 @@ fn report_storage(error: storage::StorageError) -> ExecState {
     match error {
         storage::StorageError::NoDisk => { kprintln!("error: no disk"); ExecState::Error }
         storage::StorageError::Denied(denied) => { report_denied(denied); ExecState::Denied }
+        storage::StorageError::Stale => { kprintln!("error: file capability target changed"); ExecState::Error }
+        storage::StorageError::IdentityExhausted => { kprintln!("error: file identity exhausted"); ExecState::Error }
         storage::StorageError::Fs(error) => {
             kprintln!("error: {}", error.message());
             ExecState::Error
         }
+    }
+}
+
+fn process_read_error(error: process::ReadError) -> ExecState {
+    match error {
+        process::ReadError::Denied(denied) => { report_denied(denied); ExecState::Denied }
+        process::ReadError::Missing => { kprintln!("error: no such user process or retained result"); ExecState::Error }
+    }
+}
+
+fn process_spawn(result: Result<u32, tasks::SpawnError>) -> ExecState {
+    match result {
+        Ok(pid) => { kprintln!("started user process as pid {} (ring 3, domain user, 12 frames)", pid); ExecState::Success }
+        Err(tasks::SpawnError::Denied(denied)) => { report_denied(denied); ExecState::Denied }
+        Err(tasks::SpawnError::Failed(message)) => { kprintln!("error: {}", message); ExecState::Error }
+    }
+}
+
+/// Process output stays in a private kernel queue until a shell explicitly
+/// reads it. Escape control bytes that could act on the host serial terminal.
+pub(crate) fn escaped_process_output(bytes: &[u8], out: &mut impl Write) -> fmt::Result {
+    for &byte in bytes {
+        match byte {
+            b'\n' | b'\t' | 0x20..=0x7e => out.write_char(byte as char)?,
+            _ => write!(out, "\\x{:02x}", byte)?,
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn execute_process(operation: operations::Operation, arguments: &[&str], keyboard: &mut Keyboard) -> ExecState {
+    use operations::Operation as O;
+    match operation {
+        O::ProcessPrograms => {
+            for program in user_images::PROGRAMS { kprintln!("{} {} bytes", program.name, program.bytes.len()); }
+            ExecState::Success
+        }
+        O::ProcessList => {
+            kprintln!("PID PARENT NAME DOMAIN STATE CPU_TICKS FRAMES OUTPUT");
+            process::list(|info| kprintln!("{} {} {} {} {} {} {} {}", info.pid, info.parent_pid,
+                info.name(), info.domain.name(), info.state, info.cpu_ticks, info.frames, info.output_len));
+            ExecState::Success
+        }
+        O::ProcessRun => process_spawn(process::spawn_builtin(arguments[0], arguments.get(1).copied().unwrap_or(""))),
+        O::ProcessExec => match process::spawn_file(arguments[0], arguments.get(1).copied().unwrap_or("")) {
+            Ok(pid) => process_spawn(Ok(pid)),
+            Err(process::FileSpawnError::Spawn(error)) => process_spawn(Err(error)),
+            Err(process::FileSpawnError::Storage(error)) => report_storage(error),
+        },
+        O::ProcessInstall => {
+            let Some(bytes) = user_images::builtin(arguments[0]) else { kprintln!("error: unknown builtin user program"); return ExecState::Error; };
+            match storage::write(arguments[1], bytes, false) {
+                Ok(_) => { kprintln!("installed {} as {} ({} bytes, label {})", arguments[0], arguments[1], bytes.len(), tasks::current_domain().name()); ExecState::Success }
+                Err(error) => report_storage_mutation(error),
+            }
+        }
+        O::ProcessWait | O::ProcessOutput => {
+            let pid = arguments[0].parse::<u32>().unwrap_or(0);
+            if operation == O::ProcessWait {
+                loop {
+                    match process::info(pid) {
+                        Ok(info) if info.finished() => break,
+                        Ok(_) => {},
+                        Err(error) => return process_read_error(error),
+                    }
+                    if cancelled(keyboard) { kprintln!("cancelled: wait for process {}", pid); return ExecState::Cancelled; }
+                    net::poll();
+                    tasks::sleep_until(interrupts::ticks().saturating_add(1));
+                }
+            }
+            let mut state = ExecState::Success;
+            let result = process::output(pid, |info, bytes| {
+                if !bytes.is_empty() {
+                    escaped_process_output(bytes, console()).ok();
+                    if bytes.last() != Some(&b'\n') { kprintln!(); }
+                }
+                if operation == O::ProcessWait {
+                    match info.reason {
+                        Some(process::ExitReason::Exit(code)) => {
+                            kprintln!("process {} exited status {} | domain user | cpu {} ticks", pid, code, info.cpu_ticks);
+                            if code != 0 { state = ExecState::Error; }
+                        }
+                        Some(process::ExitReason::Fault { vector, error, rip, address }) => {
+                            kprintln!("process {} fault vector {} error 0x{:x} rip 0x{:x} address 0x{:x}; process terminated", pid, vector, error, rip, address);
+                            state = ExecState::Error;
+                        }
+                        Some(process::ExitReason::Killed) => { kprintln!("process {} killed", pid); state = ExecState::Error; }
+                        None => {},
+                    }
+                    if info.truncated { kprintln!("process output queue refused an overflowing write"); }
+                }
+            });
+            match result { Ok(()) => state, Err(error) => process_read_error(error) }
+        }
+        _ => ExecState::Error,
     }
 }
 

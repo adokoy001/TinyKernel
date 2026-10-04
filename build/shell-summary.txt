@@ -1,5 +1,5 @@
 Tane Shell v1 QEMU integration test
-Elapsed: 17.83s
+Elapsed: 17.16s
 Transport (shell): local pipes (Unix sockets unavailable or disabled)
 Transport (shell-persistence): local pipes (Unix sockets unavailable or disabled)
 Transport (shell-peer): stdio + Ethernet socketpair

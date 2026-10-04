@@ -2,7 +2,8 @@
 //!
 //! The kernel installs its own GDT with a TSS so that a double fault runs on a
 //! separate known-good stack (IST1). Vectors 0..=31 are CPU exceptions,
-//! 32..=47 are the remapped PIC IRQs and 48 is the task yield. Every stub
+//! 32..=47 are the remapped PIC IRQs, 48 is the kernel task yield and 128 is
+//! the ring 3 system-call gate. Every stub
 //! saves the general registers and calls `tane_interrupt_dispatch` with a
 //! pointer to the saved frame. The dispatcher returns the frame to resume:
 //! returning another task's saved frame is the context switch.
@@ -20,19 +21,27 @@ const IRQ_TIMER: u64 = 0;
 const IRQ_KEYBOARD: u64 = 1;
 const IRQ_COM1: u64 = 4;
 const YIELD_VECTOR: u64 = 48;
+const SYSCALL_VECTOR: u64 = 128;
 
 const KERNEL_CODE: u16 = 0x08;
 const KERNEL_DATA: u16 = 0x10;
 const TSS_SELECTOR: u16 = 0x18;
+const USER_DATA: u16 = 0x2b;
+const USER_CODE: u16 = 0x33;
 const DOUBLE_FAULT_IST: u8 = 1;
+const TSS_BYTES: u64 = 104;
 
 static TICKS: AtomicU64 = AtomicU64::new(0);
 
 #[repr(C, align(16))]
-struct Gdt([u64; 5]);
+struct Gdt([u64; 7]);
 
-// 0x08: 64-bit ring 0 code, 0x10: ring 0 data, 0x18: 64-bit TSS (two slots).
-static mut GDT: Gdt = Gdt([0, 0x00af9a000000ffff, 0x00cf92000000ffff, 0, 0]);
+// 0x08: ring 0 code, 0x10: ring 0 data, 0x18: TSS (two slots),
+// 0x28: ring 3 data, 0x30: 64-bit ring 3 code. Selector RPL is added separately.
+static mut GDT: Gdt = Gdt([
+    0, 0x00af9a000000ffff, 0x00cf92000000ffff, 0, 0,
+    0x00cff2000000ffff, 0x00affa000000ffff,
+]);
 
 // The 104-byte 64-bit TSS as 32-bit words: RSP0 at word 1, IST1 at word 9.
 #[repr(C, align(16))]
@@ -55,21 +64,24 @@ struct DescriptorPointer {
 
 extern "C" {
     static tane_isr_table: [u64; 49];
+    static isr_128: u8;
 }
 
 /// Registers saved by `isr_common`, lowest address first.
 #[repr(C)]
 #[derive(Default)]
 pub struct Frame {
-    r15: u64, r14: u64, r13: u64, r12: u64, r11: u64, r10: u64, r9: u64, r8: u64,
-    rbp: u64, rdi: u64, rsi: u64, rdx: u64, rcx: u64, rbx: u64, rax: u64,
-    vector: u64,
-    error: u64,
-    rip: u64,
-    cs: u64,
-    rflags: u64,
-    rsp: u64,
-    ss: u64,
+    pub(crate) r15: u64, pub(crate) r14: u64, pub(crate) r13: u64, pub(crate) r12: u64,
+    pub(crate) r11: u64, pub(crate) r10: u64, pub(crate) r9: u64, pub(crate) r8: u64,
+    pub(crate) rbp: u64, pub(crate) rdi: u64, pub(crate) rsi: u64, pub(crate) rdx: u64,
+    pub(crate) rcx: u64, pub(crate) rbx: u64, pub(crate) rax: u64,
+    pub(crate) vector: u64,
+    pub(crate) error: u64,
+    pub(crate) rip: u64,
+    pub(crate) cs: u64,
+    pub(crate) rflags: u64,
+    pub(crate) rsp: u64,
+    pub(crate) ss: u64,
 }
 
 impl Frame {
@@ -86,7 +98,30 @@ impl Frame {
             ..Frame::default()
         }
     }
+
+    /// Enter a user image with a literal argument buffer in RDI/RSI. IF is
+    /// enabled, IOPL remains zero, and no inherited kernel register survives.
+    pub fn user(entry: u64, rsp: u64, argptr: u64, arglen: u64) -> Self {
+        Frame {
+            rdi: argptr,
+            rsi: arglen,
+            rip: entry,
+            cs: USER_CODE as u64,
+            rflags: 0x202,
+            rsp,
+            ss: USER_DATA as u64,
+            ..Frame::default()
+        }
+    }
+
+    pub fn user_mode(&self) -> bool {
+        self.cs & 3 == 3
+    }
 }
+
+// isr_common uses the CS offset below before popping the saved registers.
+const _: () = assert!(core::mem::size_of::<Frame>() == 22 * 8);
+const _: () = assert!(core::mem::offset_of!(Frame, cs) == 18 * 8);
 
 // Vectors whose CPU-pushed error code is kept; the others push a zero.
 global_asm!(r#"
@@ -138,6 +173,8 @@ ISR_NOERR 31
 .irp n, 32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48
 ISR_NOERR \n
 .endr
+ISR_NOERR 128
+.global isr_128
 
 isr_common:
     push rax
@@ -155,11 +192,25 @@ isr_common:
     push r13
     push r14
     push r15
-    /* The CPU aligned RSP to 16 bytes; 22 saved quadwords keep it aligned. */
+    /* Long mode aligns RSP, then pushes SS/RSP even for ring 0 interrupts.
+       Five CPU words plus the two stub words and 15 GPRs total 22, keeping
+       the stack 16-byte aligned before CALL for both privilege paths. */
     mov rdi, rsp
     cld
+    /* A user may leave DS/ES null or set to user data. Rust always runs with
+       the kernel data selectors; every GDT segment has a zero base. */
+    mov ax, 0x10
+    mov ds, ax
+    mov es, ax
     call tane_interrupt_dispatch
     mov rsp, rax              /* The frame to resume, possibly another task's. */
+    mov ax, 0x10
+    test byte ptr [rsp + 144], 3
+    jz 1f
+    mov ax, 0x2b
+1:
+    mov ds, ax
+    mov es, ax
     pop r15
     pop r14
     pop r13
@@ -231,14 +282,18 @@ pub unsafe fn init() {
     let words = &mut (*addr_of_mut!(TSS)).0;
     words[9] = ist_top as u32;
     words[10] = (ist_top >> 32) as u32;
-    words[25] = 104 << 16; // I/O permission bitmap base beyond the limit: none.
+    words[25] = (TSS_BYTES as u32) << 16; // No I/O bitmap: ring 3 I/O is denied.
 
-    let limit = core::mem::size_of::<Tss>() as u64 - 1;
+    // Tss has 16-byte alignment and therefore trailing Rust padding. Its
+    // descriptor covers exactly the architectural 104 bytes: including that
+    // padding would turn the zero-filled bytes at I/O base 104 into an
+    // accidental permission bitmap granting ring 3 access to low I/O ports.
+    let limit = TSS_BYTES - 1;
     let gdt = &mut (*addr_of_mut!(GDT)).0;
     gdt[3] = (limit & 0xffff) | (tss & 0xff_ffff) << 16 | 0x89 << 40
         | ((limit >> 16) & 0xf) << 48 | ((tss >> 24) & 0xff) << 56;
     gdt[4] = tss >> 32;
-    let pointer = DescriptorPointer { limit: core::mem::size_of::<Gdt>() as u16 - 1, base: addr_of!(GDT) as u64 };
+    let pointer = DescriptorPointer { limit: core::mem::size_of::<[u64; 7]>() as u16 - 1, base: addr_of!(GDT) as u64 };
     asm!(
         "lgdt [{pointer}]",
         "push {code}",
@@ -261,10 +316,11 @@ pub unsafe fn init() {
     for (vector, &handler) in (*addr_of!(tane_isr_table)).iter().enumerate() {
         let ist = if vector == 8 { DOUBLE_FAULT_IST } else { 0 };
         // Present, ring 0, 64-bit interrupt gate (IF is cleared on entry).
-        idt[vector][0] = (handler & 0xffff) | (KERNEL_CODE as u64) << 16 | (ist as u64) << 32
-            | 0x8e << 40 | ((handler >> 16) & 0xffff) << 48;
-        idt[vector][1] = handler >> 32;
+        idt[vector] = gate(handler, ist, 0x8e);
     }
+    // The only software interrupt that ring 3 may invoke. It also clears IF;
+    // every syscall and scheduler mutation starts on the task's TSS RSP0.
+    idt[SYSCALL_VECTOR as usize] = gate(addr_of!(isr_128) as u64, 0, 0xee);
     let pointer = DescriptorPointer { limit: core::mem::size_of::<Idt>() as u16 - 1, base: addr_of!(IDT) as u64 };
     asm!("lidt [{}]", in(reg) &pointer, options(readonly, nostack, preserves_flags));
 
@@ -275,6 +331,23 @@ pub unsafe fn init() {
     crate::outb(0x40, (PIT_DIVISOR >> 8) as u8);
     crate::outb(0x21, !((1 << IRQ_TIMER) | (1 << IRQ_KEYBOARD) | (1 << IRQ_COM1)) as u8);
     crate::outb(0xa1, 0xff);
+}
+
+fn gate(handler: u64, ist: u8, flags: u64) -> [u64; 2] {
+    [
+        (handler & 0xffff) | (KERNEL_CODE as u64) << 16 | (ist as u64) << 32
+            | flags << 40 | ((handler >> 16) & 0xffff) << 48,
+        handler >> 32,
+    ]
+}
+
+/// Select the supervisor stack for the next ring 3 interrupt. The scheduler
+/// calls this with IF cleared alongside CR3 switching; both words belong to
+/// one 64-bit RSP0 field and must not be observed half updated.
+pub unsafe fn set_rsp0(top: u64) {
+    let words = addr_of_mut!((*addr_of_mut!(TSS)).0);
+    (*words)[1] = top as u32;
+    (*words)[2] = (top >> 32) as u32;
 }
 
 unsafe fn remap_pics() {
@@ -325,6 +398,18 @@ pub fn yield_now() {
 
 #[no_mangle]
 extern "C" fn tane_interrupt_dispatch(frame: &mut Frame) -> *mut Frame {
+    if frame.vector <= 31 && frame.user_mode() {
+        let address = if frame.vector == 14 {
+            let cr2: u64;
+            unsafe { asm!("mov {}, cr2", out(reg) cr2, options(nomem, nostack, preserves_flags)); }
+            cr2
+        } else { 0 };
+        // Do not print here: an interrupt may have preempted the kernel
+        // console. Faults become per-process state for later shell inspection.
+        return crate::tasks::terminate_current(frame, crate::process::ExitReason::Fault {
+            vector: frame.vector, error: frame.error, rip: frame.rip, address,
+        });
+    }
     match frame.vector {
         3 => {
             report(frame);
@@ -337,7 +422,18 @@ extern "C" fn tane_interrupt_dispatch(frame: &mut Frame) -> *mut Frame {
             crate::halt();
         }
         YIELD_VECTOR => crate::tasks::switch(frame, None),
-        vector => irq(frame, vector - IRQ_BASE),
+        SYSCALL_VECTOR => {
+            if frame.user_mode() && crate::tasks::is_user() {
+                crate::user_syscalls::dispatch(frame)
+            } else {
+                // A kernel caller cannot impersonate a user task. Reject the
+                // request without turning an accidental INT into a panic.
+                frame.rax = (-1i64) as u64;
+                frame
+            }
+        }
+        vector @ IRQ_BASE..=47 => irq(frame, vector - IRQ_BASE),
+        _ => frame,
     }
 }
 

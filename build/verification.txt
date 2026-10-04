@@ -1,71 +1,128 @@
-Tane OS verification — 2026-10-03 UTC (0.7: Tane Shell v1)
+Tane OS verification — 2026 10 04 (0.8: isolated Rust user processes)
 
-Base: 5334a5e6fd6572b42e7d2936f867c4d928933558 (main)
+Base: 76cac328eb7398d6c060a66e5b5472671e2cb874 (main, OS 0.7)
 Compiler: rustc 1.90.0 (1159e78c4 2025-09-14)
-Binutils: GNU as / ld 2.42
+Binutils: GNU as / ld / objdump 2.42
 Emulator: QEMU 8.2.2, PC BIOS, TCG, 64 MiB RAM; smoke also boots 128 MiB.
+All four final guest suites used this same image, without rebuilding between
+runs. The process suite also checked the image hash before and after.
+Image SHA256:
+442b5de5aff35c58997d84a2ad973382462947e7b7354c189964c74d89ab320a
 
-Host tests: 113 distinct tests passed, 0 failed.
+HOST VALIDATION
+132 distinct Rust tests passed, 0 failed:
   shell 12, frames 5, sched 5, mac 6, fs 6, inet 4,
   pci 2, rtl8139 3, resources 4, netstack 11,
   shell_lang 9, operations 4, records 13, editor 12,
-  variables 4, plans 13.
-tests/host.sh performs 135 successful test invocations because its wrappers
-repeat MAC (6), inet (4), and fs + MAC (12) tests. See host-summary.txt.
+  variables 4, plans 13, executable 6, usermem 7,
+  handles 4, user_abi 1, storage integration 1.
+The 21 Rust test binaries perform 187 successful invocations because wrappers
+repeat imported module tests. Counts above remove those duplicates.
+A separate production AddressSpace integration executable is compiled without
+--test: it exercises the actual allocation/mapping/copy/teardown implementation
+against aligned host memory and verifies page permissions, disjoint physical
+pages, zeroed BSS/arguments, whole-span validation, cross-page copies and wipe.
+7 Python build-gate tests passed against real assembled instructions, including
+SSE/x87/XSAVE in non-executable rodata, forbidden live kernel instructions and
+prefix-bearing FXSAVE. The mandatory integer-only kernel gate also passed on
+the final ELF. See host-summary.txt and tests/host.sh.
 
-QEMU baseline integration: 26 checks passed, 0 failed.
-QEMU network integration: 15 checks passed, 0 failed.
-QEMU shell integration: 24 checks passed, 0 failed.
-  Typed record filters/projection/numeric sort/count/JSON and save;
-  literal quotes, escapes and variable data without command evaluation;
-  complete pipeline validation before any source or sink effects;
-  registry-derived help, discovery and command completion;
-  serial and physical PS/2 cursor editing, delete, history and draft restore;
-  255-byte VGA wrap and cursor insertion; full typed history reconstruction;
-  overflowing input rejected as an entire command, followed by recovery;
-  scripts with error/cancellation stopping later effects;
-  depth 4 with file append/read and a maximal 8-stage pipeline;
-  depth 5 rejected without file effects, followed by prompt recovery;
-  one-use plans, literal frozen payload, stale revision and domain checks;
-  domain lowering erases variables, plan, history and record contents;
-  MAC on sources, sinks, scripts and plans; unreadable files stay hidden;
-  saved pipeline data and scripts survive a fresh QEMU boot;
-  real RTL8139 IPv4/IPv6 replies through typed projection and JSON;
-  typed timeout events + summary preserved with status error;
-  a typed timeout stops a script before its next write, then ping recovers;
-  invalid network stages and user-domain ping emit zero Ethernet frames.
+QEMU VALIDATION
+Baseline: 26 checks passed, 0 failed (14.75 s).
+Network: 15 checks passed, 0 failed.
+Shell: 24 checks passed, 0 failed (17.16 s).
+User processes: 40 checks passed, 0 failed (25.36 s).
+Total: 105 named guest integration checks.
+
+Process checks include:
+  compiled Rust code executing at CPL3, captured output, exit and literal args;
+  sleep/yield/timer scheduling, responsive shell during a CPU-bound user loop;
+  two simultaneously live processes with the same virtual data address but
+  distinct physical memory and sentinels preserved across preemption;
+  zeroed reused pages, immutable User resource charges and atomic quota failure;
+  cancel-wait without killing, explicit kill and complete 12-frame recovery;
+  24 hardware probes: kernel code/data read/write, VGA read/write, RX write,
+  data/stack NX, null/guard/stack-end, CLI/HLT/IN/OUT/privileged interrupt,
+  SSE/x87/UD2/SYSCALL/SYSENTER/WRFSBASE/XSAVE;
+  each hardware probe terminates only its victim and leaves the shell usable;
+  malformed user ranges, overflow, excessive lengths and unknown syscall;
+  audited denials of privileged format/audit/network requests;
+  immutable read/write handle rights, closed/stale/cross-PID token rejection;
+  delete/recreate identities and reused handle slots never revive authority;
+  destination-domain read checks reject copying Admin files into User code;
+  bad commands/headers fail before process allocation or execution;
+  User file updates invalidate old shell plans; stale apply leaves exact data
+  unchanged and a fresh plan commits;
+  User-labelled Tane executables execute after a fresh QEMU restart.
+See process-summary.txt and process-serial.txt for the cases and raw transcript.
+
+The baseline/network/shell suites retain all OS 0.7 checks: BIOS and drivers,
+E820 frame accounting, scheduling, MAC/quotas, persistent TaneFS and integrity,
+exception/IST/paging behavior, serial/PS2 editing, typed pipelines and JSON,
+variable literalness, scripts/depth/cancellation, one-use plans and permissions,
+RTL8139 IPv4/IPv6 replies, malformed network frames, timeout/recovery and
+zero packet emission for denied or invalid pipelines.
 See smoke-summary.txt, smoke-serial.txt, network-summary.txt,
 network-qemu-{peer,no-nic,slirp,shell-peer}.serial,
 shell-summary.txt and shell-serial.txt.
+The deterministic Ethernet peer uses an inherited local socketpair, not an
+outside host. QEMU user-network checks use 10.0.2.2 and fd00::2. Serial test
+transports use local pipes in this environment.
 
-The deterministic Ethernet peer uses an inherited socketpair, not an
-outside host. QEMU user-network checks use 10.0.2.2 and fd00::2.
-Smoke and shell serial transports use local pipes in this environment.
+IMAGE AND STACK BOUNDS
+Boot: exactly 512 bytes, ending 55 AA; loads 768 sectors / 384 KiB.
+KERNEL_SECTORS in boot.S is the shared loader/build size-limit source.
+A QEMU boundary probe read the last byte at 0x6ffff across BIOS track/head and
+64 KiB DMA window transitions, then entered long mode successfully.
+Flat kernel: 311288 bytes < 393216-byte load budget.
+Kernel entry: 0x10000, ELF64 x86-64; loaded end: 0x5bff8.
+BSS: NOLOAD at 0x100000, end 0x127158 < linker limit 0x200000.
+Allocator reservation is rounded through 0x128000; E820 host/guest accounting
+uses this actual boundary. Relocating BSS did not add a 1 MiB binary padding.
+Unresolved ELF symbols: none. Linker checks loaded image, shell stack and BSS.
 
-Boot: exactly 512 bytes, ending 55 AA; loads up to 256 KiB (512 sectors).
-KERNEL_SECTORS in boot.S is the shared source for loader/build size limits.
-Boundary probes loaded markers at the final bytes of 128 KiB and 256 KiB
-across BIOS track/head changes and 64 KiB DMA windows, then entered long mode.
-Kernel entry: 0x10000, ELF64 x86-64.
-Flat kernel: 251216 bytes, below the 262144-byte boot load budget.
-BSS-inclusive kernel end: 0x720f0, below the shell-stack base 0x80000.
-Unresolved ELF symbols: none. Linker verifies kernel/stack non-overlap.
-Prepared pipeline state uses five static disjoint slots, one per depth.
-Conservative direct-call stack estimate for four scripts and heavy file I/O:
-about 50 KiB of the 64 KiB shell stack; depth boundary also exercised in QEMU.
-SHA256 of the image used for all final guest suites:
-a7841ab2dc5c14c3527ce8bac156fe299dd74ffd350871054a6857e1affb757e
+Final disassembly stack audit keyed functions by address and resolved all 226
+GOT indirect call/jump targets. Conservative call-path estimates:
+  shell with four nested scripts and a heavy proc-output/error leaf:
+    50920 / 65536 bytes;
+  syscall dispatch with file append/storage/table write/error formatting:
+    7727 / 16384 bytes, including the 176-byte frame and 15-byte alignment reserve;
+  shell plus one full maximum dispatch reserve: 58647 bytes, 6889 bytes spare.
+These are static estimates, not an exhaustive proof of register/vtable calls
+or arbitrary NMI/exception nesting. Depth-four heavy file/pipeline operations
+and the final process suite also ran on the real guest stacks.
 
-Shell limits: ASCII interactive input 255 bytes; parser/expanded arena 512
-bytes; 48 words, 8 pipeline stages, 64 rows, 8 columns, 64 UTF-8 bytes per
-text cell; 8 variables; 8 history lines; script files 4096 bytes with at
-most 32 command lines, 4 nested invocations and 128 total executed lines.
-No heap, external crates, external executable loading, POSIX redirection,
-command substitution, background jobs or persistent history.
+SECURITY BOUNDARIES AND CURRENT LIMITS
+Each User process has its own CR3, RX code, RW/NX data and 8 KiB RW/NX stack
+with unmapped guards. Four page-table frames, four user-memory frames and a
+16 KiB kernel stack total 12 frames, all charged to User even for an Admin
+caller. The User frame limit is 24, so at most two such processes fit when
+no other User frames are allocated. Processes never reuse PIDs within a boot.
+Syscall input is copied only after validating the complete user range; output
+writes are similarly checked before storage effects or handle cursor changes.
+TSS IO bitmap is beyond its architectural 104-byte limit, denying User I/O.
+SYSCALL/SYSENTER alternate entries, FSGSBASE and OSXSAVE are disabled;
+FS/GS bases are zero. CR0.TS/MP traps unsupported x87/MMX/SSE state. No FPU,
+SIMD, TLS, dynamic linking, heap, fork, POSIX compatibility or network syscalls.
+Executable files use a strict original 32-byte Tane header, <=4096-byte total,
+with one code page and one data/BSS page; no ELF loader or relocations.
+The Shell and trusted demonstration tasks remain ring 0. File MAC is shared
+Admin/User domain policy, not PID-specific private files or per-user ACLs.
+Four handles per process have immutable rights, owning PID, non-reused tokens
+and mutation identities checked on each read/write. Exit, kill and fault
+revoke handles; after leaving the task stack/CR3, all 12 frames are wiped and
+returned to the immutable charge owner. Bounded exit/output records remain.
+Stdout retains 1024 bytes per process lifetime, with eight recent outcomes;
+reading output does not drain the limit. Control bytes are escaped on display.
 
-All tasks remain ring 0 with a shared address space. Command MAC is not
-hardware isolation from arbitrary task code. Stack-canary overflow and
-physical disk write errors were not reproduced in QEMU; in-memory failing
-disk behavior is covered by existing host tests. Plans are not a filesystem
-journal or power-failure rollback mechanism. Physical hardware and UEFI
-were not tested. Network remains static ARP/NDP/ICMP, without TCP/UDP/DNS.
+Storage operations serialize against user syscalls. Stage/apply masks interrupts
+across the entire validation/snapshot/revision/consume/effect/discard transaction,
+closing the plan check/use race introduced by concurrent user file mutations.
+The deterministic guest plan test covers changed revisions; the narrow race
+itself is closed by inspection of the uninterrupted critical section, not a
+forced race schedule.
+Plans are not a journal or power-failure rollback. In-memory failing disk tests
+cover error handling; physical disk errors, stack-canary overflow and real
+hardware/UEFI were not reproduced. Network remains static ARP/NDP/ICMP without
+TCP/UDP/DNS. Hardware fault probes and QEMU tests are evidence of these specific
+boundaries, not a claim of complete security for arbitrary hardware or programs.

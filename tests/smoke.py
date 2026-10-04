@@ -280,12 +280,18 @@ def checked_frames(mem_output):
     """Recompute the usable frame count from the printed E820 map."""
     usable = set()
     reserved = []
+    kernel = re.search(rb"Kernel BSS: +0x100000\.\.0x([0-9a-f]+); frames reserved through 0x([0-9a-f]+)", mem_output)
+    if not kernel:
+        raise AssertionError("Missing kernel BSS reservation")
+    kernel_end, frame_base = (int(value, 16) for value in kernel.groups())
+    if not LOW_MEMORY_END <= kernel_end <= 2 * LOW_MEMORY_END or frame_base != -(-kernel_end // FRAME) * FRAME:
+        raise AssertionError("Invalid kernel BSS frame reservation")
     for base, end, kind in re.findall(rb"^  0x([0-9a-f]+)\.\.0x([0-9a-f]+) +\d+ KiB (.+?)\r$", mem_output, re.M):
         base, end = int(base, 16), int(end, 16)
         if kind.endswith(b"(ignored)"):
             continue
         if kind == b"usable":
-            start = -(-max(base, LOW_MEMORY_END) // FRAME)
+            start = -(-max(base, frame_base) // FRAME)
             usable.update(range(start, min(end, FRAME_LIMIT) // FRAME))
         else:
             reserved.append(range(min(base, FRAME_LIMIT) // FRAME, -(-min(end, FRAME_LIMIT) // FRAME)))
@@ -376,7 +382,7 @@ def main():
             raise AssertionError("COM1 was not detected although QEMU provides it")
         contains(machine.command(b"help\r"), b"calc I64 (+|-|*|/) I64")
         about = machine.command(b"about\r")
-        contains(about, b"CPU exceptions print registers; all tasks share ring 0 and one address space.")
+        contains(about, b"Kernel tasks use ring 0; user processes use ring 3 and separate address spaces.")
         contains(about, b"RTL8139, ARP/IPv4/ICMP, NDP/IPv6/ICMPv6; static network configuration.")
         result = machine.command(b"mem\r")
         contains(result, b"First 1 GiB identity mapped: 4 KiB pages below 2 MiB, then 2 MiB pages.")

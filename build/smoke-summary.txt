@@ -1,5 +1,5 @@
 Tane OS QEMU integration test
-Elapsed: 16.09s
+Elapsed: 14.75s
 Transport (main): local pipes (Unix sockets unavailable or disabled)
 Transport (reboot): local pipes (Unix sockets unavailable or disabled)
 Transport (integrity): local pipes (Unix sockets unavailable or disabled)

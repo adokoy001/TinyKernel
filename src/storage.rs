@@ -1,15 +1,17 @@
 //! Storage: the ATA disk, TaneFS on it, and the access checks for files.
 //! Every operation that names a file asks `security` first, with the label
 //! stored in that file's entry; new files take the creator's domain and
-//! count against its file limit. Only the shell task uses storage, so the
-//! disk itself needs no lock.
+//! count against its file limit. All public operations run with interrupts
+//! disabled, serializing the single ATA controller and filesystem against
+//! preempted shell calls and user syscalls. Callbacks must never yield.
 
 use crate::ata::Ata;
 use crate::fs::{FileSystem, FsError, MAX_FILE_SIZE};
 use crate::mac::{self, Domain, Op};
 pub use crate::plans::{PlannedKind, Snapshot};
 use crate::security::{self, Denied};
-use crate::tasks;
+use crate::{interrupts, tasks};
+use crate::handles::Identity;
 use core::ptr::addr_of_mut;
 
 enum Disk {
@@ -19,15 +21,20 @@ enum Disk {
 }
 
 static mut DISK: Disk = Disk::Absent;
-// Only the shell task changes storage. This boot-local stamp covers every
+// Interrupts serialize storage changes. This boot-local stamp covers every
 // mount and attempted mutation, including partial failures and slot reuse.
 // It deliberately also invalidates a plan when an unrelated file changes.
 static mut REVISION: u64 = 0;
+// Boot-local per-slot mutation epochs distinguish deletion/recreation even
+// if the on-disk 32-bit generation wraps or starts again at one.
+static mut EPOCHS: [u64; crate::fs::MAX_FILES] = [0; crate::fs::MAX_FILES];
 
 pub enum StorageError {
     NoDisk,
     Denied(Denied),
     Fs(FsError),
+    Stale,
+    IdentityExhausted,
 }
 
 impl StorageError {
@@ -39,7 +46,7 @@ impl StorageError {
 }
 
 pub fn revision() -> u64 {
-    unsafe { *addr_of_mut!(REVISION) }
+    interrupts::without(|| unsafe { *addr_of_mut!(REVISION) })
 }
 
 fn advance_revision() {
@@ -95,7 +102,7 @@ fn label(stored: u8) -> Domain {
 }
 
 /// Probe the disk and mount TaneFS if it is there.
-pub fn init() {
+fn init_locked() {
     advance_revision();
     *disk() = match Ata::detect() {
         None => Disk::Absent,
@@ -106,27 +113,37 @@ pub fn init() {
     };
 }
 
-pub enum Status<'a> {
+/// ATA identification copied out of the critical section; no disk borrow
+/// escapes while another task may format or replace the filesystem.
+#[derive(Clone, Copy)]
+pub struct Model([u8; 40]);
+impl Model {
+    pub fn as_str(&self) -> &str { core::str::from_utf8(&self.0).unwrap_or("?").trim_end() }
+}
+impl core::fmt::Display for Model {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result { f.write_str(self.as_str()) }
+}
+pub enum Status {
     Absent,
-    Unformatted { model: &'a str, sectors: u32, error: FsError },
-    Mounted { model: &'a str, sectors: u32, files: usize },
+    Unformatted { model: Model, sectors: u32, error: FsError },
+    Mounted { model: Model, sectors: u32, files: usize },
 }
 
-pub fn status() -> Status<'static> {
+fn status_locked() -> Status {
     use crate::fs::BlockDevice;
     match disk() {
         Disk::Absent => Status::Absent,
-        Disk::Unformatted(ata, error) => Status::Unformatted { model: ata.model(), sectors: ata.sectors(), error: *error },
+        Disk::Unformatted(ata, error) => Status::Unformatted { model: Model(ata.model), sectors: ata.sectors(), error: *error },
         Disk::Mounted(fs) => {
             let files = fs.entries().count();
             let ata = fs.device();
-            Status::Mounted { model: ata.model(), sectors: ata.sectors(), files }
+            Status::Mounted { model: Model(ata.model), sectors: ata.sectors(), files }
         }
     }
 }
 
 /// Erase the disk and write an empty TaneFS (admin only).
-pub fn format() -> Result<(), StorageError> {
+fn format_locked() -> Result<(), StorageError> {
     security::check(Op::Format, None, None)?;
     let ata = match core::mem::replace(disk(), Disk::Absent) {
         Disk::Absent => return Err(StorageError::NoDisk),
@@ -160,7 +177,7 @@ pub struct Listing<'a> {
 
 /// Files the current domain may read. Others are not shown (and, since
 /// nothing was requested of them, not audited).
-pub fn list(mut each: impl FnMut(&Listing)) -> Result<(), StorageError> {
+fn list_locked(mut each: impl FnMut(&Listing)) -> Result<(), StorageError> {
     let fs = mounted()?;
     let subject = tasks::current_domain();
     for (slot, entry) in fs.entries() {
@@ -172,7 +189,7 @@ pub fn list(mut each: impl FnMut(&Listing)) -> Result<(), StorageError> {
     Ok(())
 }
 
-pub fn read(name: &str, buffer: &mut [u8; MAX_FILE_SIZE]) -> Result<usize, StorageError> {
+fn read_locked(name: &str, buffer: &mut [u8; MAX_FILE_SIZE]) -> Result<usize, StorageError> {
     let fs = mounted()?;
     let (slot, entry) = fs.find(name).ok_or(FsError::NotFound)?;
     security::check(Op::Read, Some(label(entry.label)), Some(slot as u64))?;
@@ -182,7 +199,7 @@ pub fn read(name: &str, buffer: &mut [u8; MAX_FILE_SIZE]) -> Result<usize, Stora
 /// Obtain a checked, policy-filtered target identity without changing disk.
 /// A failed read is an unavailable target, never an absent target. Existing
 /// data is checksum-verified before its metadata is used for a plan.
-pub fn snapshot(name: &str) -> Result<Snapshot, StorageError> {
+fn snapshot_locked(name: &str) -> Result<Snapshot, StorageError> {
     if !crate::fs::valid_name(name.as_bytes()) {
         return Err(FsError::BadName.into());
     }
@@ -202,7 +219,7 @@ pub fn snapshot(name: &str) -> Result<Snapshot, StorageError> {
 
 /// Check the exact planned operation and available capacity without writes.
 /// Apply still calls the ordinary write/remove gate after this preflight.
-pub fn preflight(name: &str, kind: PlannedKind, payload_len: usize) -> Result<(), StorageError> {
+fn preflight_locked(name: &str, kind: PlannedKind, payload_len: usize) -> Result<(), StorageError> {
     if !crate::fs::valid_name(name.as_bytes()) {
         return Err(FsError::BadName.into());
     }
@@ -233,12 +250,13 @@ pub fn preflight(name: &str, kind: PlannedKind, payload_len: usize) -> Result<()
 }
 
 /// Write (or with `append`, extend) a file, creating it if needed.
-pub fn write(name: &str, data: &[u8], append: bool) -> Result<bool, StorageError> {
+fn write_locked(name: &str, data: &[u8], append: bool) -> Result<bool, StorageError> {
     let fs = mounted()?;
     let result = match fs.find(name) {
         Some((slot, entry)) => {
             security::check(Op::Write, Some(label(entry.label)), Some(slot as u64))?;
             advance_revision();
+            stamp(slot);
             if append { fs.append(slot, data) } else { fs.overwrite(slot, data) }.map(|_| false)
         }
         None => {
@@ -246,27 +264,115 @@ pub fn write(name: &str, data: &[u8], append: bool) -> Result<bool, StorageError
             let subject = tasks::current_domain();
             security::check_file_quota(fs.count_label(subject.index() as u8))?;
             advance_revision();
-            fs.create(name, subject.index() as u8, data).map(|_| true)
+            fs.create(name, subject.index() as u8, data).map(|slot| { stamp(slot); true })
         }
     };
     if let Err(error) = result { invalidate_failed_write(error); }
     result.map_err(StorageError::from)
 }
 
-pub fn remove(name: &str) -> Result<(), StorageError> {
+fn remove_locked(name: &str) -> Result<(), StorageError> {
     let fs = mounted()?;
     let (slot, entry) = fs.find(name).ok_or(FsError::NotFound)?;
     security::check(Op::Delete, Some(label(entry.label)), Some(slot as u64))?;
     advance_revision();
+    stamp(slot);
     let result = fs.delete(slot);
     if let Err(error) = result { invalidate_failed_write(error); }
     result.map_err(StorageError::from)
 }
 
 /// Files labelled `domain`, or `None` without a mounted disk.
-pub fn files_owned(domain: Domain) -> Option<u32> {
+fn files_owned_locked(domain: Domain) -> Option<u32> {
     match disk() {
         Disk::Mounted(fs) => Some(fs.count_label(domain.index() as u8)),
         _ => None,
     }
+}
+
+
+fn stamp(slot: usize) {
+    unsafe { (*addr_of_mut!(EPOCHS))[slot] = *addr_of_mut!(REVISION); }
+}
+
+// The *_locked helpers never escape a mutable filesystem reference.
+// Nesting interrupts::without is safe: each call restores its prior IF.
+pub fn init() { interrupts::without(init_locked) }
+pub fn status() -> Status { interrupts::without(status_locked) }
+pub fn format() -> Result<(), StorageError> { interrupts::without(format_locked) }
+pub fn list(each: impl FnMut(&Listing)) -> Result<(), StorageError> { interrupts::without(|| list_locked(each)) }
+pub fn read(name: &str, buffer: &mut [u8; MAX_FILE_SIZE]) -> Result<usize, StorageError> { interrupts::without(|| read_locked(name, buffer)) }
+pub fn snapshot(name: &str) -> Result<Snapshot, StorageError> { interrupts::without(|| snapshot_locked(name)) }
+pub fn preflight(name: &str, kind: PlannedKind, payload_len: usize) -> Result<(), StorageError> { interrupts::without(|| preflight_locked(name, kind, payload_len)) }
+pub fn write(name: &str, data: &[u8], append: bool) -> Result<bool, StorageError> { interrupts::without(|| write_locked(name, data, append)) }
+pub fn remove(name: &str) -> Result<(), StorageError> { interrupts::without(|| remove_locked(name)) }
+pub fn files_owned(domain: Domain) -> Option<u32> { interrupts::without(|| files_owned_locked(domain)) }
+
+/// Executable bytes must be readable by both the creator and the child
+/// domain. An Admin-only file cannot become public by spawning a User task.
+pub fn read_for_domain(destination: Domain, name: &str, buffer: &mut [u8; MAX_FILE_SIZE]) -> Result<usize, StorageError> {
+    interrupts::without(|| {
+        let fs = mounted()?;
+        let (slot, entry) = fs.find(name).ok_or(FsError::NotFound)?;
+        let object = Some(label(entry.label));
+        security::check(Op::Read, object, Some(slot as u64))?;
+        security::check_domain(destination, Op::Read, object, Some(slot as u64))?;
+        Ok(fs.read(slot, buffer)?)
+    })
+}
+
+fn identity_locked(name: &str) -> Result<Identity, StorageError> {
+    if revision() == u64::MAX { return Err(StorageError::IdentityExhausted); }
+    let fs = mounted()?;
+    let (slot, entry) = fs.find(name).ok_or(FsError::NotFound)?;
+    Ok(Identity { slot: slot as u8, label: entry.label, size: entry.size,
+        generation: entry.generation, checksum: entry.checksum,
+        epoch: unsafe { (*addr_of_mut!(EPOCHS))[slot] } })
+}
+
+/// Open performs MAC/quota checks before creating a missing WRITE file.
+/// It never truncates an existing file. The returned identity is owned.
+pub fn open_capability(name: &str, rights: u8) -> Result<Identity, StorageError> {
+    interrupts::without(|| {
+        if !crate::fs::valid_name(name.as_bytes()) { return Err(FsError::BadName.into()); }
+        if !crate::handles::valid_rights(rights) { return Err(FsError::BadName.into()); }
+        if revision() == u64::MAX { return Err(StorageError::IdentityExhausted); }
+        let fs = mounted()?;
+        match fs.find(name) {
+            Some((slot, entry)) => {
+                if rights & crate::handles::READ != 0 { security::check(Op::Read, Some(label(entry.label)), Some(slot as u64))?; }
+                if rights & crate::handles::WRITE != 0 { security::check(Op::Write, Some(label(entry.label)), Some(slot as u64))?; }
+            }
+            None => {
+                if rights & crate::handles::WRITE == 0 { return Err(FsError::NotFound.into()); }
+                if revision() >= u64::MAX - 1 { return Err(StorageError::IdentityExhausted); }
+                write_locked(name, &[], false)?;
+            }
+        }
+        identity_locked(name)
+    })
+}
+
+/// Rechecks the immutable handle's target and MAC on each use. The caller
+/// has already validated a complete writable user span before disk I/O.
+pub fn read_capability(name: &str, expected: Identity, buffer: &mut [u8; MAX_FILE_SIZE]) -> Result<usize, StorageError> {
+    interrupts::without(|| {
+        let actual = identity_locked(name).map_err(|error| if matches!(error, StorageError::Fs(FsError::NotFound)) { StorageError::Stale } else { error })?;
+        if actual != expected { return Err(StorageError::Stale); }
+        read_locked(name, buffer)
+    })
+}
+
+/// Writes append at EOF and return a new identity to this one handle.
+/// Other handles to this target become stale, including after slot reuse.
+pub fn append_capability(name: &str, expected: Identity, data: &[u8]) -> Result<Identity, StorageError> {
+    interrupts::without(|| {
+        let actual = identity_locked(name).map_err(|error| if matches!(error, StorageError::Fs(FsError::NotFound)) { StorageError::Stale } else { error })?;
+        if actual != expected { return Err(StorageError::Stale); }
+        preflight_locked(name, PlannedKind::Append, data.len())?;
+        if data.is_empty() { return Ok(actual); }
+        if revision() >= u64::MAX - 1 { return Err(StorageError::IdentityExhausted); }
+        write_locked(name, data, true)?;
+        identity_locked(name)
+    })
 }

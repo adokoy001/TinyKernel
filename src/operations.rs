@@ -11,6 +11,7 @@ pub enum Operation {
     Security, Resources, Audit, DropToUser, Disk, Network, Ping, Format,
     List, Cat, Write, Append, Remove, Echo, Calc, Sleep, Fault, Free,
     Spawn, Kill, Ops, Vars, Let, Unset, History, Run, Plan, Show, Apply,
+    ProcessPrograms, ProcessList, ProcessRun, ProcessExec, ProcessInstall, ProcessWait, ProcessOutput,
     Where, Select, Sort, Take, Count, Json, Save,
 }
 
@@ -111,6 +112,13 @@ pub static OPERATIONS: [Metadata; OPERATION_COUNT] = [
     entry!(Plan, "plan", [], "plan file write|append|remove NAME [TEXT]", "Hold one literal file mutation with its creator and verified target identity.", "plan file write notes \"hello\"", Control, Text, "file read and mutation permissions; apply rechecks them"),
     entry!(Show, "show", [], "show", "Show the currently held plan.", "show", ReadOnly, Text, "current shell only"),
     entry!(Apply, "apply", [], "apply [ID]", "Consume the held plan once; recheck its domain, revision, target and permissions.", "apply", Control, Unit, "file read and mutation permissions"),
+    entry!(ProcessPrograms, "proc programs", [], "proc programs", "List bundled original Rust user executables.", "proc programs | json", ReadOnly, Records, "all domains"),
+    entry!(ProcessList, "proc list", [], "proc list", "Read live and recent isolated user process states.", "proc list | json", ReadOnly, Records, "domain read policy"),
+    entry!(ProcessRun, "proc run", [], "proc run PROGRAM [TEXT]", "Start a bundled program in ring 3 as user.", "proc run hello", Control, Number, "spawn permission; user task and frame quotas"),
+    entry!(ProcessExec, "proc exec", [], "proc exec FILE [TEXT]", "Load a checked Tane executable readable by the user domain.", "proc exec hello.tane", Control, Number, "caller and user file-read policy; spawn and user quotas"),
+    entry!(ProcessInstall, "proc install", [], "proc install PROGRAM FILE", "Save a bundled executable with the current domain's file label.", "proc install hello hello.tane", Write, Unit, "file ownership and current domain's storage quota"),
+    entry!(ProcessWait, "proc wait", [], "proc wait PID", "Wait for one process, read its result and output; Ctrl-C cancels waiting.", "proc wait 2", Control, Unit, "domain read policy"),
+    entry!(ProcessOutput, "proc output", [], "proc output PID", "Read bounded output captured from one user process.", "proc output 2", ReadOnly, Text, "domain read policy"),
     entry!(Where, "where", [], "where FIELD OP VALUE", "Filter typed rows with == != < <= > >=.", "file list | where bytes > 0", ReadOnly, Records, "pipeline input only"),
     entry!(Select, "select", [], "select FIELD ...", "Project typed rows onto named columns.", "task list | select pid state", ReadOnly, Records, "pipeline input only"),
     entry!(Sort, "sort", [], "sort FIELD [--desc]", "Sort bounded typed rows by one column; ascending by default.", "file list | sort name", ReadOnly, Records, "pipeline input only"),
