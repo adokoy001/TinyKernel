@@ -1,6 +1,6 @@
-Tane OS 0.8 ring 3 QEMU integration test
-Image SHA256: 442b5de5aff35c58997d84a2ad973382462947e7b7354c189964c74d89ab320a
-Elapsed: 25.36s
+Tane OS ring 3 QEMU regression test
+Image SHA256: 9ffadfb1380bc0776577f36e49d20f04ee2f175184ce898131b651f2a5028ef6
+Elapsed: 24.90s
 Transport (process): local pipes (Unix sockets unavailable or disabled)
 Transport (process-persist): local pipes (Unix sockets unavailable or disabled)
 PASS: Ring 3 program catalog and clean user resource baseline

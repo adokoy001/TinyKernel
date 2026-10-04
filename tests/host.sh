@@ -21,4 +21,9 @@ rustc --edition=2021 tests/host_usermem.rs -o build/usermem-owned-tests
 rustc --edition=2021 --test tests/host_storage.rs -o build/storage-tests
 ./build/storage-tests -q
 
+rustc --edition=2021 --test tests/process_control.rs -o build/process-control-tests
+./build/process-control-tests -q
+rustc --edition=2021 --test tests/fs_crash.rs -o build/fs-crash-tests
+./build/fs-crash-tests -q
+
 python3 tests/build_guard.py

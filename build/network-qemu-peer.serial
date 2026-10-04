@@ -1,7 +1,7 @@
 TANE OS / RUST BARE METAL
 Self-made BIOS loader + Rust kernel. External crates: 0.
-64-bit mode | VGA + COM1 | PS/2 keyboard | no heap
-RAM: 7 E820 entries | 16056 free 4 KiB frames (64224 KiB) above 1 MiB
+64-bit mode | VGA + COM1 | PS/2 keyboard | bounded user heap
+RAM: 7 E820 entries | 16058 free 4 KiB frames (64232 KiB) above 1 MiB
 IDT: 32 exception handlers, #DF on IST1 | PIT timer 100 Hz
 Tasks: preemptive round robin, up to 8 tasks
 Protection: NX data | kernel text read-only | null page unmapped | CR0.WP
@@ -116,19 +116,19 @@ reply from 10.0.2.2: seq=9 bytes=16 ttl=64 time=10 ms
 reply from 10.0.2.2: seq=10 bytes=16 ttl=64 time=10 ms
 10 sent, 10 received
 tane> ping fd00::2 --count 10 --timeout 500
-reply from fd00::2: seq=1 bytes=16 ttl=64 time=0 ms
+reply from fd00::2: seq=1 bytes=16 ttl=64 time=10 ms
 reply from fd00::2: seq=2 bytes=16 ttl=64 time=10 ms
 reply from fd00::2: seq=3 bytes=16 ttl=64 time=10 ms
 reply from fd00::2: seq=4 bytes=16 ttl=64 time=10 ms
 reply from fd00::2: seq=5 bytes=16 ttl=64 time=10 ms
-reply from fd00::2: seq=6 bytes=16 ttl=64 time=0 ms
+reply from fd00::2: seq=6 bytes=16 ttl=64 time=10 ms
 reply from fd00::2: seq=7 bytes=16 ttl=64 time=10 ms
 reply from fd00::2: seq=8 bytes=16 ttl=64 time=10 ms
 reply from fd00::2: seq=9 bytes=16 ttl=64 time=10 ms
 reply from fd00::2: seq=10 bytes=16 ttl=64 time=10 ms
 10 sent, 10 received
 tane> ping 10.0.2.2 --count 10 --timeout 500
-reply from 10.0.2.2: seq=1 bytes=16 ttl=64 time=0 ms
+reply from 10.0.2.2: seq=1 bytes=16 ttl=64 time=10 ms
 reply from 10.0.2.2: seq=2 bytes=16 ttl=64 time=10 ms
 reply from 10.0.2.2: seq=3 bytes=16 ttl=64 time=10 ms
 reply from 10.0.2.2: seq=4 bytes=16 ttl=64 time=10 ms
@@ -152,7 +152,7 @@ reply from fd00::2: seq=9 bytes=16 ttl=64 time=10 ms
 reply from fd00::2: seq=10 bytes=16 ttl=64 time=10 ms
 10 sent, 10 received
 tane> ping 10.0.2.2 --count 10 --timeout 500
-reply from 10.0.2.2: seq=1 bytes=16 ttl=64 time=0 ms
+reply from 10.0.2.2: seq=1 bytes=16 ttl=64 time=10 ms
 reply from 10.0.2.2: seq=2 bytes=16 ttl=64 time=10 ms
 reply from 10.0.2.2: seq=3 bytes=16 ttl=64 time=10 ms
 reply from 10.0.2.2: seq=4 bytes=16 ttl=64 time=10 ms

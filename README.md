@@ -1,6 +1,6 @@
 # Tane OS — Rustで作る最小の自前カーネル
 
-作成日: 2026 10 02 / 0.8更新: 2026 10 04
+作成日: 2026 10 02 / 0.9更新: 2026 10 04
 
 既存OSの上で動くシェルではなく、仮想PCのCPUを直接動かす小さなカーネルです。
 OS本体、BIOS用ブートセクター、画面・入力ドライバを、このプロジェクト内で実装しています。
@@ -28,7 +28,7 @@ GitHubの **Code → Download ZIP** でソースを取得して展開するか�
 sh run.sh
 ```
 
-初回は`build/disk.img`（1 MiB、TaneFS用のデータディスク）が作られます。新しいディスクだけ、最初に`file format`してから使ってください。中身は次回以降も残ります。`file format`は既存のファイルをすべて消します。
+初回は`build/disk.img`（1 MiB、TaneFS用のデータディスク）が作られます。新しいディスクだけ、最初に`file format`してから使ってください。中身は次回以降も残ります。`file format`は既存のファイルをすべて消します。旧TaneFS v1の既存ディスクは読み取り専用で起動し、adminの`file upgrade`でファイルとラベルを保ったままv2にできます。`file status`で版を確認してください。
 
 新しいディスクで、起動後のプロンプトに次のように入力すると、保存と読み出しを試せます。
 
@@ -51,7 +51,7 @@ sh run.sh --serial
 
 ## Tane Shell v1を試す
 
-0.8には、自前のシェル言語、共通operation registry、型付きレコードのパイプライン、入力編集、変数、スクリプト、ファイル変更のplan/apply、ring 3のユーザープロセスを含みます。シェルはカーネル内のタスクとして動き、自作の`.tane`実行ファイルを独立したアドレス空間で起動できます。Linuxのシェルや実行ファイルは使いません。
+0.9には、自前のシェル言語、共通operation registry、型付きレコードのパイプライン、入力編集、変数、スクリプト、ファイル変更のplan/apply、ring 3のユーザープロセス、有界なuserヒープ、子プロセス制御、障害後に再実行するストレージの更新記録を含みます。シェルはカーネル内のタスクとして動き、自作の`.tane`実行ファイルを独立したアドレス空間で起動できます。Linuxのシェルや実行ファイルは使いません。
 
 ```text
 help
@@ -101,7 +101,16 @@ proc output $PID
 task list | select pid name domain mode
 ```
 
-`proc wait`は終了を待ち、出力と結果を読みます。`proc output`はその時点の出力を読むだけです。プロセスは入力中の端末へ直接書き込まず、最大1024バイトの出力を保持します。終了・例外・killの結果は最近8件を残します。`proc wait`のCtrl+Cは待機だけを取り消し、プロセスは動き続けます。止めるには`task kill PID`を使います。
+`proc wait`は終了を待ち、出力と結果を読みます。`proc output`はその時点の出力を読むだけです。プロセスは入力中の端末へ直接書き込まず、最大1024バイトの出力を保持します。終了・例外・killの結果は最近8件を残します。`proc wait`のCtrl+Cは待機だけを取り消し、プロセスは動き続けます。一時停止と再開は`proc pause PID`・`proc resume PID`、終了は`task kill PID`を使います。
+
+0.9では、ページ単位のヒープと、プログラムからの子の起動・wait・killも試せます。次を1つずつ起動し、表示されたPIDを`proc wait`へ渡してください。
+
+```text
+proc run heap basic
+proc run control basic
+```
+
+`heap`はゼロ初期化、ページをまたぐsyscall、縮小後の解放と再確保を確認します。`control`は子を起動して、親だけが受け取れる終了結果を待ちます。`proc list`の`frames`と、`proc memory PID`のheap行から使用量を読めます。User全体の24フレーム枠に、親・子・ヒープをすべて含めます。
 
 `proc exec FILE`では、TaneFSの実行ファイルを読み込みます。実行先userにも読み取り権限が必要なため、adminラベルのファイルをadminの権限でuserへ渡すことはできません。新規ファイルをuserラベルでインストールする例です。`drop`は再起動まで元に戻せません。
 
@@ -162,6 +171,13 @@ proc exec echo.tane "hello from TaneFS"
 | `proc run PROGRAM [TEXT]` | 同梱プログラムをring 3・userとして起動 |
 | `proc install PROGRAM FILE` / `proc exec FILE [TEXT]` | 実行ファイルを保存・読み込んで起動 |
 | `proc wait PID` / `proc output PID` | 終了待ちと結果・出力の読み出し |
+| `proc pause PID` / `proc resume PID` | ring 3プロセスを一時停止・再開 |
+| `proc memory PID` | プロセスのcode・data・stack・heap配置とページ権限を読む |
+| `file status` / `file check` | ファイルシステムの版・復旧状態、読める全ファイルの内容検査 |
+| `file sync` | ディスクのflush完了を待つ（admin専用） |
+| `file upgrade` | 旧v1をファイル・ラベルを保ってv2に移行（admin専用） |
+| `file rename OLD NEW` | 名前を変更。既存の名前は上書きせず、ラベルは保持 |
+| `file truncate NAME BYTES` | 0〜4096バイトに伸縮。延長分はゼロ |
 
 演算子は`+`、`-`、`*`、`/`です。各項目を空白で区切ります。除算は整数除算で、ゼロ除算やオーバーフローはエラー表示します。
 `fault`の種類は`bp`（ブレークポイント）、`de`（ゼロ除算）、`ud`（未定義命令）、`gp`（一般保護例外）、`pf`（ページフォルト）、`df`（ダブルフォルト）です。
@@ -244,8 +260,8 @@ sh run.sh
 | `src/shell_runtime.rs` | シェルの共通実行、事前検査、変数・スクリプト・plan・状態の管理 |
 | `src/variables.rs` | 有界な文字列変数、名前と容量の検査、読み取り専用STATUSの予約 |
 | `src/executable.rs` | 自作Tane実行ファイルの厳密なヘッダー・長さ・入口検査 |
-| `src/usermem.rs` | プロセスごとのページテーブル、RX/NX、ガード、userポインタの全範囲検査とコピー |
-| `src/process.rs` | ユーザープロセス、出力1024バイト、最近8件の終了結果、メモリ回収 |
+| `src/usermem.rs` | プロセスごとのページテーブル、RX/NX、ガード、有界なヒープの増減、userポインタの全範囲検査とコピー |
+| `src/process.rs` | ユーザープロセス、動的フレーム勘定、親子のwait権限、出力1024バイト、最近8件の終了結果、メモリ回収 |
 | `src/user_abi.rs` / `src/user_syscalls.rs` | `int 0x80`の独自ABI、コピー・権限・資源検査付きsyscall |
 | `src/handles.rs` | PID限定のファイルhandle、固定権限、再利用しないtokenと対象identity |
 | `src/user_images.rs` | ビルド済み自作ユーザープログラムの同梱 |
@@ -258,6 +274,9 @@ sh run.sh
 | `tests/network.py` | 実NICと専用Ethernet peerで通信・不正入力・取消・権限を確認 |
 | `tests/shell.py` | QEMU上の型付きパイプライン、編集、変数、スクリプト、plan、権限と保存を確認 |
 | `tests/process.py` | QEMU上のring 3、独立メモリ、例外・I/O拒否、syscall・handle・権限・回収を確認 |
+| `tests/advanced.py` | QEMU上のヒープ、pause/resume、親子の制御、位置からのファイル操作・保存を確認 |
+| `tests/fs_crash.rs` | 本番のTaneFS実装に書き込み・flush・tearの障害を注入して復旧を確認 |
+| `tests/process_control.rs` | 本番の親子waitとscheduler経路をホスト上で実行して確認 |
 | `build/build-info.txt` | ビルドしたサイズ、ツールチェーン、SHA-256 |
 
 ## どう起動するか
@@ -319,7 +338,7 @@ QEMUのRAMは`run.sh`で64 MiBに設定しています。使用可能なフレ�
 
 | 主体 | 対象の種類 | 操作 | 対象のラベル |
 | --- | --- | --- | --- |
-| admin | system | halt reboot fault audit format | — |
+| admin | system | halt reboot fault audit format sync | — |
 | admin | memory | alloc free | admin user |
 | admin | task | spawn kill | admin user |
 | admin | file | create read write delete | admin user |
@@ -345,26 +364,32 @@ QEMUのRAMは`run.sh`で64 MiBに設定しています。使用可能なフレ�
 | admin | 6 | 4096（16 MiB） | 24 | 70% |
 | user | 3 | 24（96 KiB） | 8 | 30% |
 
-カーネルのデモタスクはスタックに4フレーム、ユーザープロセスはページテーブル4・コード1・データ1・userスタック2・kernelスタック4の合計12フレームを使います。userの上限24フレームから、ユーザープロセスは同時に最大2個です。ほかのuserフレームやtaskを使っていると、さらに少なくなります。
+カーネルのデモタスクはスタックに4フレーム、ユーザープロセスはページテーブル4・コード1・データ1・userスタック2・kernelスタック4の基本12フレームを使います。ヒープはさらに0〜8フレームを使い、同じUserの勘定に加算します。userの上限24フレームから、ヒープなしのユーザープロセスは同時に最大2個です。1個でもヒープを使っていれば、ほかのUser資源がなくても2個目の基本12フレームを確保できません。子プロセスも同じ上限に従います。
 
 - **CPU配分**: 1秒（100ティック）ごとに、動的に起動したkernel taskとuser processが使ったティックをドメインごとに数えます。配分を使い切ったドメインのタスクは、ほかのドメインに実行待ちのタスクがある間は後回しになります。ほかに待つタスクがなければ配分を超えても動き、CPUを遊ばせません。adminとuserのタスクが競うと、70%と30%に分かれます（`top`で確認できます）。
 - **数えないもの**: シェルと`idle`は数えず、後回しにもしません。シェルの応答を保つためです。
 - **上限超過の扱い**: 上限を超える要求は`quota`として拒否し、監査ログに残ります。
 
-### ストレージ（TaneFS）
+### ストレージ（TaneFS v2）
 
-QEMUのIDEディスク（`run.sh`では`build/disk.img`、1 MiB）を、自作のATAドライバで読み書きします。
+QEMUのIDEディスク（`run.sh`では`build/disk.img`、1 MiB）を、自作のATAドライバで読み書きします。新規formatはv2で、旧v1ディスクは自動変換せず読み取り専用でマウントします。adminが明示的に`file upgrade`すれば、ファイルを保ってv2へ移行できます。
 
 | 場所 | 内容 |
 | --- | --- |
-| LBA 0 | スーパーブロック（識別子、版、配置、チェックサム） |
-| LBA 1〜4 | ファイル表（32件。名前、ラベル、大きさ、内容のチェックサム、書き換え回数） |
-| LBA 8〜 | データ（1ファイル8セクター＝最大4 KiB） |
+| LBA 0 | スーパーブロックと配置・全headerチェックサム |
+| LBA 1〜4 / 5 | ファイル表32件 / 表4セクターのチェックサム一覧 |
+| LBA 8〜263 | データ。1ファイル8セクター・最大4 KiB |
+| LBA 264〜274 | redo journal。commit headerと、変更後のdata・表・checksum一覧 |
 
-- **書き込みの順序**: 内容を書いてから、それを指すファイル表を書きます。書き込みのたびにディスクのキャッシュをフラッシュします。
-- **破損の検出**: 内容が壊れていれば、`cat`は内容を返さずにチェックサムの不一致を報告します。
-- **再利用時の消去**: 書き換えでは4 KiBの領域全体を書き直します。削除では領域をゼロで消します。前のファイルの残りが次のファイルから見えることはありません。
-- **待ち時間の上限**: ディスクの待ちにはすべて上限があります。ディスクがない、または応答しないときはエラーになり、止まりません。
+- **更新と復旧**: 変更後の内容・表・checksumをjournalへ保存してflushし、commit印をflushしてから本来の場所へ反映します。途中で停止したcommit済み更新は、次のマウントで全payloadを検査して再実行します。
+- **破損の検出**: 表のchecksumをマウント時に、内容のchecksumを読み取り時に検査します。壊れたcommit印やpayloadを部分適用せず、マウントを拒否します。
+- **名前・長さ・部分書き込み**: シェルは`file rename`・`file truncate`を使えます。userのhandleはseek・位置からのwrite・truncateも使え、空いた部分や延長分をゼロにします。
+- **再利用時の消去**: 変更後の4 KiB領域全体を用意し、EOF後ろをゼロにします。deleteは全体のゼロと空の表を1つの更新として記録します。
+- **移行**: `file upgrade`は全ファイルの内容と既存表を検査してから補助metadataを保存し、最後にv2のスーパーブロックを公開します。file本体・ラベル・世代を変えません。
+- **状態と検査**: `file status`で版・readonly・復旧の有無を読み、`file check`で現在のドメインが読める全ファイルの内容を検査できます。`file sync`はadmin専用のflushです。
+- **保証の前提**: durableなセクター書き込みとflushをデバイスが守ることを前提にします。任意のtearや故障から必ずマウントできる保証、暗号学的な偽造防止、形式証明はありません。format自体は破壊的で、途中で止まれば未formatになり得ます。
+
+ディスク配置、commitの順序、v1の扱いと障害時の制約は[ストレージv2](docs/storage-v2.md)を参照してください。
 
 ### オブジェクトの再利用
 
@@ -388,11 +413,11 @@ QEMUのIDEディスク（`run.sh`では`build/disk.img`、1 MiB）を、自作�
 - 割り込みはPITタイマー（IRQ 0、100 Hz）、キーボード（IRQ 1）、COM1受信（IRQ 4）だけを受け付けます。キーボードとCOM1の割り込みは入力待ちのシェルを起こすためだけに使い、データはシェルが読みます。割り込みを取りこぼしても止まらないよう、入力待ちは100 msごとにも見直します。
 - COM1がない構成（`sh run.sh`の画面モード）では、COM1を使わずにVGAとキーボードだけで動きます。
 
-ユーザープロセスは固定配置の小さな実行ファイルで、コード1ページ・データ1ページ・userスタック2ページに限定します。ヒープ、動的マッピング、ELF/POSIX互換、fork、pipeで接続した外部コマンド、ディレクトリはありません。CPUの拡張状態を保存するABIがないため、x87/MMX/SSE/AVXは使用不可です。ハードウェアTSを有効化し、XSAVEとFSGSBASEを無効化しています。TLSもありません。
+ユーザープロセスの実行ファイルは固定配置のコード1ページ・データ1ページ・userスタック2ページです。ヒープだけは固定した仮想領域を0〜8ページに増減できます。任意アドレスのmmap、ELF/POSIX互換、fork、pipeで接続した外部コマンド、ディレクトリはありません。CPUの拡張状態を保存するABIがないため、x87/MMX/SSE/AVXは使用不可です。ハードウェアTSを有効化し、XSAVEとFSGSBASEを無効化しています。TLSもありません。
 ネットワークはRTL8139が1台、MTU 1500、固定アドレス、ARP/NDPとechoのみです。DHCP、DNS、SLAAC、IPv6 DADによる自アドレス重複検査、UDP、TCP、ソケット、VLAN、IPv4断片の再構成、IPv6拡張ヘッダは未実装です。相手のDAD要求への応答は行います。
 Rustのpanicは表示して停止します。
 
-シェルv1はカーネルの機能を一貫した入口から使い、ユーザープロセスv1は独自syscallとTane形式のプログラムを実行します。プログラムの標準出力は有界な記録で、シェルの型付きパイプラインとは別です。
+シェルv1はカーネルの機能を一貫した入口から使い、ユーザープロセスは独自syscallとTane形式のプログラムを実行します。プログラムの標準出力は有界な記録で、シェルの型付きパイプラインとは別です。
 
 ## テストを再実行する
 
@@ -403,6 +428,7 @@ python3 tests/smoke.py
 python3 tests/network.py
 python3 tests/shell.py
 python3 tests/process.py
+python3 tests/advanced.py
 ```
 
 `build/`内のテスト結果とスクリーンショットが、そのビルドで行った確認の記録です。
@@ -414,6 +440,7 @@ python3 tests/process.py
 | `tests/network.py` | 実RTL8139、IPv4/IPv6、異常フレーム、取消、userから送信しないこと | `build/network-summary.txt` |
 | `tests/shell.py` | 型付き処理、引用と変数の非評価、編集、save、スクリプトの停止、planと権限 | `build/shell-summary.txt` |
 | `tests/process.py` | 実CPL3、独立CR3、プリエンプション、user例外、syscallとhandle、Userの資源上限・ファイル権限・回収 | `build/process-summary.txt` |
+| `tests/advanced.py` | 有界ヒープ、停止と再開、親子のwait/kill、positioned I/O、ストレージの権限と保存 | `build/advanced-summary.txt` |
 
 ## 一次資料
 

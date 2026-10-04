@@ -59,6 +59,20 @@ unsafe fn wait_not_busy() -> Result<u8, DiskError> {
     Err(DiskError::Timeout)
 }
 
+/// Completion of a non-data command or the last word of a PIO transfer.
+/// DRQ can take time to clear after the final word; polling it avoids
+/// issuing the next command too early or rejecting a merely slow drive.
+unsafe fn wait_complete() -> Result<(), DiskError> {
+    for _ in 0..POLL_LIMIT {
+        let status = crate::inb(STATUS);
+        if status & BSY == 0 {
+            if status & (ERR | DF) != 0 { return Err(DiskError::Device); }
+            if status & DRQ == 0 { return Ok(()); }
+        }
+    }
+    Err(DiskError::Timeout)
+}
+
 unsafe fn wait_data() -> Result<(), DiskError> {
     for _ in 0..POLL_LIMIT {
         let status = crate::inb(STATUS);
@@ -143,6 +157,8 @@ impl BlockDevice for Ata {
             for pair in buffer.chunks_mut(2) {
                 pair.copy_from_slice(&inw(DATA).to_le_bytes());
             }
+            settle();
+            wait_complete()?;
         }
         Ok(())
     }
@@ -154,12 +170,21 @@ impl BlockDevice for Ata {
             for pair in buffer.chunks(2) {
                 outw(DATA, u16::from_le_bytes([pair[0], pair[1]]));
             }
-            // Only report success once the drive has the data on stable storage.
+            // Wait for this write command to finish before another command
+            // (including CACHE FLUSH) may be issued on the shared channel.
+            settle();
+            wait_complete()?;
+        }
+        Ok(())
+    }
+
+    fn flush(&mut self) -> Result<(), DiskError> {
+        unsafe {
+            settle();
+            wait_complete()?;
             crate::outb(COMMAND, CACHE_FLUSH);
             settle();
-            if wait_not_busy()? & (ERR | DF) != 0 {
-                return Err(DiskError::Device);
-            }
+            wait_complete()?;
         }
         Ok(())
     }

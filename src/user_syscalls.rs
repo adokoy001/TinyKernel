@@ -44,6 +44,7 @@ fn storage_errno(error: StorageError) -> i64 {
         StorageError::NoDisk => abi::EIO,
         StorageError::Fs(FsError::NotFound) => abi::ENOENT,
         StorageError::Fs(FsError::BadName) => abi::EINVAL,
+        StorageError::Fs(FsError::ReadOnly) => abi::EROFS,
         StorageError::Fs(FsError::Full | FsError::TooLarge) => abi::ENOSPC,
         StorageError::Fs(_) => abi::EIO,
     }
@@ -112,12 +113,11 @@ fn read(pid: u32, token: u64, pointer: u64, raw_len: u64) -> Result<i64, i64> {
     writable(pointer, len)?;
     let cap = capability(pid, token, Op::Read)?;
     if !cap.permits(handles::READ) { return Err(capability_denied(cap, Op::Read)); }
-    let mut buffer = [0u8; MAX_FILE_SIZE];
-    let size = storage::read_capability(cap.name(), cap.identity, &mut buffer).map_err(|error| capability_storage(error, cap, Op::Read))?;
-    let start = cap.cursor.min(size);
-    let count = len.min(size - start);
-    copy_output(pointer, &buffer[start..start + count])?;
-    caps(pid).update(pid, token, cap.identity, start + count).map_err(handle_errno)?;
+    let mut buffer = [0u8; abi::MAX_IO];
+    let count = storage::read_capability_at(cap.name(), cap.identity, cap.cursor, &mut buffer[..len])
+        .map_err(|error| capability_storage(error, cap, Op::Read))?;
+    copy_output(pointer, &buffer[..count])?;
+    caps(pid).update(pid, token, cap.identity, cap.cursor + count).map_err(handle_errno)?;
     Ok(count as i64)
 }
 
@@ -139,6 +139,75 @@ fn unlink(pointer: u64, raw_len: u64) -> Result<i64, i64> {
     storage::remove(name).map_err(storage_errno)?;
     Ok(0)
 }
+fn seek(pid: u32, token: u64, offset: u64) -> Result<i64, i64> {
+    if offset > MAX_FILE_SIZE as u64 { return Err(abi::EINVAL); }
+    let cap = capability(pid, token, Op::Read)?;
+    let op = if cap.permits(handles::READ) { Op::Read } else { Op::Write };
+    storage::seek_capability(cap.name(), cap.identity, op)
+        .map_err(|error| capability_storage(error, cap, op))?;
+    caps(pid).update(pid, token, cap.identity, offset as usize).map_err(handle_errno)?;
+    Ok(offset as i64)
+}
+fn write_cursor(pid: u32, token: u64, pointer: u64, raw_len: u64) -> Result<i64, i64> {
+    let len = abi::io_length(raw_len)?;
+    let mut buffer = [0u8; abi::MAX_IO];
+    copy_input(pointer, &mut buffer[..len])?;
+    let cap = capability(pid, token, Op::Write)?;
+    if !cap.permits(handles::WRITE) { return Err(capability_denied(cap, Op::Write)); }
+    let after = storage::write_capability_at(cap.name(), cap.identity, cap.cursor, &buffer[..len])
+        .map_err(|error| capability_storage(error, cap, Op::Write))?;
+    caps(pid).update(pid, token, after, cap.cursor + len).map_err(handle_errno)?;
+    Ok(len as i64)
+}
+fn truncate(pid: u32, token: u64, size: u64) -> Result<i64, i64> {
+    if size > MAX_FILE_SIZE as u64 { return Err(abi::EINVAL); }
+    let cap = capability(pid, token, Op::Write)?;
+    if !cap.permits(handles::WRITE) { return Err(capability_denied(cap, Op::Write)); }
+    let after = storage::truncate_capability(cap.name(), cap.identity, size as usize)
+        .map_err(|error| capability_storage(error, cap, Op::Write))?;
+    caps(pid).update(pid, token, after, cap.cursor).map_err(handle_errno)?;
+    Ok(size as i64)
+}
+
+fn spawn_errno(error: tasks::SpawnError) -> i64 {
+    match error {
+        tasks::SpawnError::Denied(_) => abi::EACCES,
+        tasks::SpawnError::ChildPending => abi::EAGAIN,
+        tasks::SpawnError::NoMemory(_) => abi::ENOMEM,
+        tasks::SpawnError::Failed(_) => abi::EINVAL,
+    }
+}
+fn child_errno(error: process::ChildError) -> i64 {
+    match error {
+        process::ChildError::NotChild | process::ChildError::AlreadyExited => abi::ECHILD,
+        process::ChildError::InvalidPointer => abi::EFAULT,
+        process::ChildError::Denied(_) => abi::EACCES,
+        process::ChildError::Failed(_) => abi::ECHILD,
+    }
+}
+/// Copy the complete descriptor and both complete payloads before publishing
+/// a child or reading its executable. No borrowed user memory crosses spawn.
+fn spawn_user(pointer: u64) -> Result<i64, i64> {
+    let mut bytes = [0u8; abi::SPAWN_BYTES];
+    copy_input(pointer, &mut bytes)?;
+    let request = abi::SpawnRequest::decode(&bytes)?;
+    let mut name = [0u8; MAX_NAME];
+    copy_input(request.name, &mut name[..request.name_len])?;
+    if !fs::valid_name(&name[..request.name_len]) { return Err(abi::EINVAL); }
+    let name = core::str::from_utf8(&name[..request.name_len]).map_err(|_| abi::EINVAL)?;
+    let mut argument = [0u8; crate::usermem::ARGS_MAX];
+    copy_input(request.argument, &mut argument[..request.argument_len])?;
+    let argument = core::str::from_utf8(&argument[..request.argument_len]).map_err(|_| abi::EINVAL)?;
+    if request.file {
+        process::spawn_file(name, argument).map(|pid| pid as i64).map_err(|error| match error {
+            process::FileSpawnError::Storage(error) => storage_errno(error),
+            process::FileSpawnError::Spawn(error) => spawn_errno(error),
+        })
+    } else {
+        if crate::user_images::builtin(name).is_none() { return Err(abi::ENOENT); }
+        process::spawn_builtin(name, argument).map(|pid| pid as i64).map_err(spawn_errno)
+    }
+}
 
 fn ordinary(pid: u32, number: u64, a: u64, b: u64, c: u64) -> Result<i64, i64> {
     match number {
@@ -156,6 +225,25 @@ fn ordinary(pid: u32, number: u64, a: u64, b: u64, c: u64) -> Result<i64, i64> {
         8 => { caps(pid).close(pid, a).map_err(handle_errno)?; Ok(0) }
         9 => unlink(a, b),
         10 => Ok(interrupts::ticks().min(i64::MAX as u64) as i64),
+        14 => {
+            if b != 0 || c != 0 || a > crate::usermem::HEAP_MAX_PAGES as u64 { return Err(abi::EINVAL); }
+            process::resize_current(a as usize).map_err(|error| match error {
+                process::HeapResizeError::NotUser => abi::EACCES,
+                process::HeapResizeError::Denied(_) => abi::EACCES,
+                process::HeapResizeError::Memory(crate::usermem::HeapError::TooLarge) => abi::EINVAL,
+                process::HeapResizeError::Memory(crate::usermem::HeapError::OutOfMemory) => abi::ENOMEM,
+            })?;
+            Ok(crate::usermem::HEAP_BASE as i64)
+        }
+        15 => { if b != 0 || c != 0 { Err(abi::EINVAL) } else { spawn_user(a) } }
+        17 => {
+            if b != 0 || c != 0 { return Err(abi::EINVAL); }
+            process::kill_child(abi::process_id(a)?).map_err(child_errno)?;
+            Ok(0)
+        }
+        18 => { if c != 0 { Err(abi::EINVAL) } else { seek(pid, a, b) } }
+        19 => write_cursor(pid, a, b, c),
+        20 => { if c != 0 { Err(abi::EINVAL) } else { truncate(pid, a, b) } }
         // These diagnostic numbers intentionally have no privileged
         // implementation. The ordinary policy gate audits User's refusal
         // before any format, audit-log disclosure or transmitted packet.
@@ -188,6 +276,16 @@ pub fn dispatch(frame: &mut Frame) -> *mut Frame {
                 Ok(ms) => { frame.rax = 0; tasks::sleep_current(frame as *mut Frame, ms) }
                 Err(error) => { frame.rax = error as u64; frame as *mut Frame }
             },
+            16 => {
+                let result = if c != 0 { Err(abi::EINVAL) } else {
+                    abi::process_id(a).and_then(|pid|
+                        process::wait_child(frame as *mut Frame, pid, b).map_err(child_errno))
+                };
+                match result {
+                    Ok(next) => next,
+                    Err(error) => { frame.rax = error as u64; frame as *mut Frame }
+                }
+            }
             _ => {
                 frame.rax = ordinary(tasks::current().0, number, a, b, c).unwrap_or_else(|error| error) as u64;
                 frame as *mut Frame

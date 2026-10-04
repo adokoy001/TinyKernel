@@ -57,6 +57,10 @@ mod ata {
             *self.data.get_mut(lba as usize).ok_or(DiskError::Device)? = *buffer;
             Ok(())
         }
+        fn flush(&mut self) -> Result<(), DiskError> {
+            assert!(!crate::interrupts::enabled(), "ATA flush must be serialized");
+            Ok(())
+        }
     }
 }
 

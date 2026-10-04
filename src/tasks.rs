@@ -43,10 +43,15 @@ struct Task {
     charged_domain: Domain,
     root: u64,
     user: bool,
+    /// Suspension is orthogonal to sleep/child wait: resuming preserves both.
+    paused: bool,
+    waiting_child: u32,
+    /// Immutable charge owner above, current number of owned frames here.
+    frames: u32,
 }
 
 impl Task {
-    const EMPTY: Task = Task { pid: 0, name: "", context: 0, stack: 0, owns_stack: false, cpu_ticks: 0, domain: Domain::Kernel, charged_domain: Domain::Kernel, root: 0, user: false };
+    const EMPTY: Task = Task { pid: 0, name: "", context: 0, stack: 0, owns_stack: false, cpu_ticks: 0, domain: Domain::Kernel, charged_domain: Domain::Kernel, root: 0, user: false, paused: false, waiting_child: 0, frames: 0 };
 }
 
 static mut STATES: [State; MAX_TASKS] = [State::Free; MAX_TASKS];
@@ -129,6 +134,28 @@ pub fn current_cpu_ticks() -> u64 {
     unsafe { (*addr_of!(TASKS))[CURRENT].cpu_ticks }
 }
 
+/// IF=0; the heap manager charges this creation-time owner even after a
+/// subject transition, and publishes frame accounting after successful resize.
+pub(crate) fn current_charge_owner() -> Domain {
+    unsafe { (*addr_of!(TASKS))[CURRENT].charged_domain }
+}
+
+pub(crate) fn set_current_frames(frames: u32) {
+    unsafe {
+        let task = &mut (*addr_of_mut!(TASKS))[CURRENT];
+        assert!(task.user, "only user address spaces have a heap");
+        task.frames = frames;
+    }
+}
+
+fn task_state(state: State, task: &Task, current: bool) -> &'static str {
+    if current { "running" }
+    else if state == State::Exited { "exited" }
+    else if task.paused { "stopped" }
+    else if task.waiting_child != 0 { "waiting" }
+    else { state.name() }
+}
+
 /// Reclaim completed tasks after the CPU has returned to another stack.
 /// The same rule is used in switches and before shell resource snapshots.
 pub fn reap_exited() {
@@ -150,11 +177,11 @@ pub(crate) fn slot_info(slot: usize) -> Option<Info> {
         let task = &(*addr_of!(TASKS))[slot];
         Some(Info {
             pid: task.pid, name: task.name, domain: task.domain,
-            state: if slot == CURRENT { "running" } else { (*addr_of!(STATES))[slot].name() },
+            state: task_state((*addr_of!(STATES))[slot], task, slot == CURRENT),
             cpu_ticks: task.cpu_ticks,
             counter: if task.owns_stack && !task.user { Some(COUNTERS[slot].load(Ordering::Relaxed)) } else { None },
             stack: task.stack, owns_stack: task.owns_stack, user: task.user,
-            frames: if task.owns_stack { STACK_FRAMES as u32 + if task.user { crate::usermem::SPACE_FRAMES as u32 } else { 0 } } else { 0 },
+            frames: task.frames,
         })
     }
 }
@@ -189,10 +216,18 @@ pub fn switch(frame: *mut Frame, prefer: Option<usize>) -> *mut Frame {
                 release(states, tasks, slot);
             }
         }
+        // Keep the original sleep deadline/input state while suspended.
+        // Child waits have no input state, so keyboard IRQs cannot wake them.
+        let mut eligible = *states;
+        for slot in 0..MAX_TASKS {
+            if tasks[slot].paused || tasks[slot].waiting_child != 0 {
+                eligible[slot] = State::Free;
+            }
+        }
         let next = match prefer {
-            Some(slot) if states[slot] == State::Ready => slot,
+            Some(slot) if eligible[slot] == State::Ready => slot,
             // A domain past its CPU share waits while others are ready.
-            _ => sched::next(states, current, IDLE, |slot| {
+            _ => sched::next(&eligible, current, IDLE, |slot| {
                 tasks[slot].owns_stack && security::over_cpu_share(tasks[slot].domain)
             }),
         };
@@ -217,8 +252,7 @@ unsafe fn release(states: &mut [State; MAX_TASKS], tasks: &mut [Task; MAX_TASKS]
         core::ptr::write_bytes(tasks[slot].stack as *mut u8, 0, STACK_BYTES as usize);
         let freed = crate::with_frames(|frames| frames.free_contiguous(tasks[slot].stack, STACK_FRAMES));
         assert!(freed.is_ok(), "task stack frames were not allocated");
-        security::release(tasks[slot].charged_domain, 1,
-            STACK_FRAMES as u32 + if tasks[slot].user { crate::usermem::SPACE_FRAMES as u32 } else { 0 });
+        security::release(tasks[slot].charged_domain, 1, tasks[slot].frames);
     }
     tasks[slot] = Task::EMPTY;
     states[slot] = State::Free;
@@ -236,10 +270,36 @@ pub fn sleep_current(frame: *mut Frame, milliseconds: u64) -> *mut Frame {
     switch(frame, None)
 }
 
+/// The ownership check, outcome-pointer validation and registration already
+/// happened in process::wait_child with IF=0. Save this frame before switching.
+pub(crate) fn wait_child_current(frame: *mut Frame, pid: u32) -> *mut Frame {
+    unsafe {
+        let task = &mut (*addr_of_mut!(TASKS))[CURRENT];
+        assert!(task.user && task.waiting_child == 0 && pid != 0);
+        task.waiting_child = pid;
+    }
+    switch(frame, None)
+}
+
+/// Publish a completed wait result in the stopped parent's saved user frame.
+/// Its pause flag is retained; a paused waiter remains unschedulable.
+pub(crate) fn wake_child_wait(parent: u32, child: u32, result: i64) {
+    unsafe {
+        for task in (*addr_of_mut!(TASKS)).iter_mut() {
+            if task.user && task.pid == parent && task.waiting_child == child {
+                assert!(task.context != 0);
+                (*(task.context as *mut Frame)).rax = result as u64;
+                task.waiting_child = 0;
+                return;
+            }
+        }
+    }
+}
+
 pub fn terminate_current(frame: *mut Frame, reason: ExitReason) -> *mut Frame {
     unsafe {
         let slot = CURRENT;
-        let task = &(*addr_of!(TASKS))[slot];
+        let task = (*addr_of!(TASKS))[slot];
         assert!(task.user, "only a user process may use user termination");
         process::finish(slot, task.cpu_ticks, reason);
         crate::user_syscalls::revoke(task.pid);
@@ -305,6 +365,8 @@ fn exit() -> ! {
 
 pub enum SpawnError {
     Denied(Denied),
+    ChildPending,
+    NoMemory(&'static str),
     Failed(&'static str),
 }
 
@@ -320,7 +382,7 @@ pub fn spawn(kind: TaskKind) -> Result<u32, SpawnError> {
         security::charge(Op::Spawn, 1, STACK_FRAMES as u32).map_err(SpawnError::Denied)?;
         let Some(stack) = crate::with_frames(|frames| frames.allocate_contiguous(STACK_FRAMES)) else {
             security::release(domain, 1, STACK_FRAMES as u32);
-            return Err(SpawnError::Failed("no free physical frames for a stack"));
+            return Err(SpawnError::NoMemory("no free physical frames for a stack"));
         };
         // Object reuse: a new stack never shows a previous owner's data.
         for offset in (0..STACK_BYTES).step_by(8) {
@@ -335,7 +397,8 @@ pub fn spawn(kind: TaskKind) -> Result<u32, SpawnError> {
         let context = prepare(stack, STACK_BYTES, entry, slot as u64);
         let (states, tasks) = table();
         tasks[slot] = Task { pid, name: kind.name(), context, stack, owns_stack: true, cpu_ticks: 0, domain,
-            charged_domain: domain, root: crate::paging::kernel_root(), user: false };
+            charged_domain: domain, root: crate::paging::kernel_root(), user: false,
+            paused: false, waiting_child: 0, frames: STACK_FRAMES as u32 };
         states[slot] = State::Ready;
         NEXT_PID = next_pid;
         Ok(pid)
@@ -349,6 +412,7 @@ pub(crate) fn spawn_user(image: &crate::executable::Image<'_>, args: &[u8],
     security::check(Op::Spawn, None, None).map_err(SpawnError::Denied)?;
     reap_exited();
     interrupts::without(|| unsafe {
+        process::check_child_capacity()?;
         let slot = (*addr_of!(STATES)).iter().position(|state| *state == State::Free)
             .ok_or(SpawnError::Failed("task table is full (8 tasks)"))?;
         let pid = NEXT_PID;
@@ -357,7 +421,7 @@ pub(crate) fn spawn_user(image: &crate::executable::Image<'_>, args: &[u8],
         security::charge_domain(Domain::User, Op::Spawn, 1, frames).map_err(SpawnError::Denied)?;
         let Some(stack) = crate::with_frames(|allocator| allocator.allocate_contiguous(STACK_FRAMES)) else {
             security::release(Domain::User, 1, frames);
-            return Err(SpawnError::Failed("no free physical frames for a kernel stack"));
+            return Err(SpawnError::NoMemory("no free physical frames for a kernel stack"));
         };
         core::ptr::write_bytes(stack as *mut u8, 0, STACK_BYTES as usize);
         let space = match crate::usermem::AddressSpace::create(image, args) {
@@ -366,7 +430,9 @@ pub(crate) fn spawn_user(image: &crate::executable::Image<'_>, args: &[u8],
                 let freed = crate::with_frames(|allocator| allocator.free_contiguous(stack, STACK_FRAMES));
                 assert!(freed.is_ok(), "new kernel stack could not be freed");
                 security::release(Domain::User, 1, frames);
-                return Err(SpawnError::Failed(message));
+                return Err(if message == "not enough contiguous process frames" {
+                    SpawnError::NoMemory(message)
+                } else { SpawnError::Failed(message) });
             }
         };
         write_volatile(stack as *mut u64, CANARY);
@@ -379,7 +445,8 @@ pub(crate) fn spawn_user(image: &crate::executable::Image<'_>, args: &[u8],
         process::install(slot, pid, parent, image_name, space);
         let (states, tasks) = table();
         tasks[slot] = Task { pid, name: task_name, context: frame as u64, stack, owns_stack: true,
-            cpu_ticks: 0, domain: Domain::User, charged_domain: Domain::User, root, user: true };
+            cpu_ticks: 0, domain: Domain::User, charged_domain: Domain::User, root, user: true,
+            paused: false, waiting_child: 0, frames };
         states[slot] = State::Ready;
         COUNTERS[slot].store(0, Ordering::Relaxed);
         NEXT_PID = next_pid;
@@ -391,6 +458,32 @@ pub enum KillError {
     Denied(Denied),
     Failed(&'static str),
 }
+
+/// The trusted shell may stop ring 3 execution, subject to the same MAC
+/// authority as kill. Kernel demonstration tasks and terminal PIDs refuse it.
+fn suspension(pid: u32, paused: bool) -> Result<&'static str, KillError> {
+    interrupts::without(|| unsafe {
+        let slot = (0..MAX_TASKS).find(|&slot| (*addr_of!(STATES))[slot] != State::Free
+            && (*addr_of!(TASKS))[slot].pid == pid)
+            .ok_or(KillError::Failed("no such task"))?;
+        let victim = (*addr_of!(TASKS))[slot];
+        if slot == CURRENT || !victim.user {
+            return Err(KillError::Failed("only another user process can be suspended"));
+        }
+        if (*addr_of!(STATES))[slot] == State::Exited {
+            return Err(KillError::Failed("process has already exited"));
+        }
+        security::check(Op::Kill, Some(victim.domain), Some(pid as u64)).map_err(KillError::Denied)?;
+        if victim.paused == paused {
+            return Err(KillError::Failed(if paused { "process is already stopped" } else { "process is not stopped" }));
+        }
+        (*addr_of_mut!(TASKS))[slot].paused = paused;
+        Ok(victim.name)
+    })
+}
+
+pub fn pause(pid: u32) -> Result<&'static str, KillError> { suspension(pid, true) }
+pub fn resume(pid: u32) -> Result<&'static str, KillError> { suspension(pid, false) }
 
 pub fn kill(pid: u32) -> Result<&'static str, KillError> {
     interrupts::without(|| unsafe {
@@ -447,13 +540,13 @@ pub fn list(mut each: impl FnMut(&Info)) {
                 pid: task.pid,
                 name: task.name,
                 domain: task.domain,
-                state: if slot == CURRENT { "running" } else { states[slot].name() },
+                state: task_state(states[slot], task, slot == CURRENT),
                 cpu_ticks: task.cpu_ticks,
                 counter: if task.owns_stack && !task.user { Some(COUNTERS[slot].load(Ordering::Relaxed)) } else { None },
                 stack: task.stack,
                 owns_stack: task.owns_stack,
                 user: task.user,
-                frames: if task.owns_stack { STACK_FRAMES as u32 + if task.user { crate::usermem::SPACE_FRAMES as u32 } else { 0 } } else { 0 },
+                frames: task.frames,
             });
         }
     });

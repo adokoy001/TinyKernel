@@ -1,7 +1,7 @@
 TANE OS / RUST BARE METAL
 Self-made BIOS loader + Rust kernel. External crates: 0.
-64-bit mode | VGA + COM1 | PS/2 keyboard | no heap
-RAM: 7 E820 entries | 16056 free 4 KiB frames (64224 KiB) above 1 MiB
+64-bit mode | VGA + COM1 | PS/2 keyboard | bounded user heap
+RAM: 7 E820 entries | 16058 free 4 KiB frames (64232 KiB) above 1 MiB
 IDT: 32 exception handlers, #DF on IST1 | PIT timer 100 Hz
 Tasks: preemptive round robin, up to 8 tasks
 Protection: NX data | kernel text read-only | null page unmapped | CR0.WP

@@ -1,6 +1,6 @@
 # Tane Shell v1
 
-更新: 2026 10 04 / Tane OS 0.8
+更新: 2026 10 04 / Tane OS 0.9
 
 Tane OSの機能を、同じ名前・引数・権限で対話操作とスクリプトから使うための小さなシェルです。Rustの`core`だけで動き、ヒープ、外部crate、ホストのシェルを使いません。LinuxやPOSIXとの互換性を前提にしない、カーネル内のシェルタスクです。
 
@@ -38,6 +38,12 @@ net status | json
 | `file append NAME TEXT` | `append` | 追記 |
 | `file remove NAME` | `rm` | 削除 |
 | `file format` | `format` | ファイルシステム全体の初期化 |
+| `file status` | — | TaneFSの版・readonly・復旧・ディスク状態 |
+| `file check` | — | 現在のドメインが読める全ファイルの内容検査 |
+| `file sync` | — | ATAのflush完了を待つ（admin専用） |
+| `file upgrade` | — | ファイルとラベルを保ったv1→v2移行（admin専用） |
+| `file rename OLD NEW` | — | ラベルを保って名前を変更。既存名は上書きしない |
+| `file truncate NAME BYTES` | — | ファイルを0〜4096バイトへ伸縮。延長分はゼロ |
 | `net status` | `net` | NICと固定アドレスの状態 |
 | `net ping IP [--count N] [--timeout MS]` | `ping` | ICMP echoによる到達確認 |
 
@@ -179,7 +185,27 @@ apply
 
 このapplyはエラーになります。applyは1回の試行で予定を消費します。IDの不一致、権限拒否、古い状態、チェックサムの不一致、ディスクエラーでも、繰り返し実行できる予定として残しません。もう一度行うには、現在の状態からplanし直します。
 
-ディスクへの変更中にI/Oが失敗すると、どこまで書き込まれたか確定できないため`commit-unknown`を返し、マウント中の状態を無効にします。成功したようには報告しません。この小さなファイルシステムはジャーナルや自動ロールバックを持たず、planも電源断時の原子性や復旧を保証するものではありません。
+ディスクへの変更中にI/Oが失敗すると、どこまで書き込まれたか確定できないため`commit-unknown`を返し、マウント中の状態を無効にします。成功したようには報告しません。TaneFS v2は、保存済みのcommit記録があれば、次回マウントでチェックサムを検査して更新後の状態を再実行します。planはこのredo journalとは別の、変更前の確認と状態照合です。複数ファイルのロールバックや、任意の故障からの自動復旧は保証しません。[ストレージv2](storage-v2.md)にcommitの前提と限界をまとめています。
+
+## ストレージの状態と内容を調べる
+
+```text
+file status | json
+file check | json
+file write sample abcdef
+file rename sample renamed
+file truncate renamed 3
+file read renamed
+file truncate renamed 8
+file list | where name == renamed | select name bytes
+file sync
+```
+
+renameは既存の名前を上書きせず、作成時のラベルを保ちます。truncateで伸ばした部分はゼロです。これらも通常のwriteと同じMAC、v2のjournal、変更番号を使い、古いhandleやplanを失効させます。
+
+`file status`は`mounted`・`version`・`readonly`・`replayed`・`sectors`・`files`・`model`・`error`を返します。`file check`は現在のドメインが読めるファイルの全内容を検査し、成功時に`files`・`bytes`を返します。userからadminのファイル内容を調べる操作にはなりません。`file sync`はadmin専用で、デバイスのflush完了を待ちます。
+
+旧v1のディスクは読み取り専用です。書き換えずにfile readやproc execへ使えますが、write・rename・truncate・installは失敗します。adminの`file upgrade`で、内容とラベルを保ってv2へ移行できます。自動変換はしません。新規formatはv2で、既存のファイルをすべて消します。移行方法、journalの配置と復旧の前提は[ストレージv2](storage-v2.md)を参照してください。
 
 ## スクリプト
 
@@ -242,9 +268,11 @@ Tab補完はカーソルが行末にあり、引用・エスケープ・パイ�
 | `proc install PROGRAM FILE` | 同梱プログラムを現在のドメインの権限でTaneFSへ保存する |
 | `proc exec FILE [TEXT]` | userにも読めるTane実行ファイルを読み込んで起動する |
 | `proc list` | 実行中と最近8件の終了結果を読む |
+| `proc memory PID` | code・data・stack・heapの配置とページ権限を読む |
 | `proc wait PID` | 終了を待ち、出力と終了理由を読む |
 | `proc output PID` | 現在までの出力をコピーして読む |
 | `task kill PID` | userプロセスを終了する。従来の`kill PID`も使える |
+| `proc pause PID` / `proc resume PID` | ring 3プロセスの実行を一時停止・再開する |
 
 ```text
 proc programs | json
@@ -255,7 +283,7 @@ task list | select pid name domain mode
 
 起動時に表示されたPIDで`let PID 番号`を実行してから、`proc wait $PID`や`proc output $PID`を使えます。PIDは起動ごとに変わるので、表示された番号を使ってください。
 
-`proc run`/`proc exec`は起動してプロンプトへ戻ります。引数は128バイトまでの1つの文字列で、シェル構文として再評価しません。引用を使って`proc run echo "text | still data"`のように渡せます。`proc run`/`proc exec`/`proc install`/`proc wait`をパイプラインのソースにはできません。状態の`proc programs`/`proc list`と出力の`proc output`は型付きパイプラインに対応します。
+`proc run`/`proc exec`は起動してプロンプトへ戻ります。引数は128バイトまでの1つの文字列で、シェル構文として再評価しません。引用を使って`proc run echo "text | still data"`のように渡せます。`proc run`/`proc exec`/`proc install`/`proc wait`/`proc pause`/`proc resume`をパイプラインのソースにはできません。状態の`proc programs`/`proc list`/`proc memory`と出力の`proc output`は型付きパイプラインに対応します。
 
 ```text
 proc output $PID | json
@@ -266,7 +294,11 @@ proc list | where state == faulted | select pid name
 
 `proc wait`で正常なexit 0なら`success`、非0終了・例外・killなら`error`になります。Ctrl+Cはwaitだけを取り消し、実行中のプロセスは残ります。スクリプトで`proc run`しただけでは、そのプログラムの終了結果を待ちません。必要なら続く行でwaitします。
 
-adminのシェルから起動しても、プロセスは必ずuserドメインです。`proc exec`は呼び出し元と実行先userの両方の読み取り権限を確認します。メモリ配置、ファイルhandle、プログラムの作り方は[ユーザープロセスv1](process-v1.md)を参照してください。
+pauseはプロセスのページ・handleを残して実行を止め、resumeは実行可能に戻します。sleepの期限や子のwaitとは別の状態なので、停止中に期限や子の終了が来ても自動で実行を再開しません。`proc list`の`state`は一時停止中に`stopped`、子のsyscall wait中に`waiting`と表示します。ring 0のシェル・idle・デモtaskはpauseの対象外です。
+
+`proc list`の`frames`は基本12フレームと追加ヒープを含みます。`proc memory PID`は`region`・`base`・`bytes`・`pages`・`read`・`write`・`execute`の列を持ち、heap行の`pages`は0〜8です。`proc run heap basic`と`proc run control basic`は、それぞれヒープの増減と子プロセスの起動・終了待ちを試す同梱プログラムです。Userの24フレーム枠をすべてのプロセスで共有するため、親と子が共存する間のヒープ枠は残りません。
+
+adminのシェルから起動しても、プロセスは必ずuserドメインです。`proc exec`は呼び出し元と実行先userの両方の読み取り権限を確認します。メモリ配置、ファイルhandle、プログラムの作り方は[ユーザープロセスとメモリ管理](process-v1.md)を参照してください。
 
 ## カーネル側の境界
 
@@ -287,6 +319,7 @@ python3 tests/smoke.py
 python3 tests/network.py
 python3 tests/shell.py
 python3 tests/process.py
+python3 tests/advanced.py
 ```
 
 hostテストは構文・上限・展開値による注入の防止、registryの一貫性、型付きレコード、編集、planの状態照合を確認します。`tests/shell.py`は実際にBIOSからQEMUを起動し、COM1の入力とATAディスクを使って、パイプライン、引用・変数、save、スクリプトの停止・取消、planの失効、権限を確認します。`tests/process.py`はring 3と独立アドレス空間、syscall、handle、例外時の終了と資源回収を確認します。結果は`build/`内のsummaryとserial記録に残します。

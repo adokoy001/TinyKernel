@@ -376,7 +376,7 @@ def main():
             transcript += machine.output
         (OUT / "process-serial.txt").write_bytes(transcript)
         elapsed = time.monotonic() - beginning
-        report = ["Tane OS 0.8 ring 3 QEMU integration test", f"Image SHA256: {image_hash}", f"Elapsed: {elapsed:.2f}s"]
+        report = ["Tane OS ring 3 QEMU regression test", f"Image SHA256: {image_hash}", f"Elapsed: {elapsed:.2f}s"]
         report += [f"Transport ({machine.name}): {machine.transport}" for machine in machines]
         report += [f"PASS: {name}" for name in checks]
         report.append(f"FAIL: {failure}" if failure else "RESULT: PASS")

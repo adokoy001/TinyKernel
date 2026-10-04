@@ -103,7 +103,7 @@ fn source_allowed(operation: O) -> bool {
     matches!(operation, O::About | O::Status | O::Memory | O::Uptime | O::Tasks | O::Security |
         O::Resources | O::Audit | O::Disk | O::Network | O::Ping | O::List | O::Cat |
         O::Echo | O::Calc | O::Ops | O::Vars | O::History)
-        || matches!(operation, O::ProcessPrograms | O::ProcessList | O::ProcessOutput)
+        || matches!(operation, O::ProcessPrograms | O::ProcessList | O::ProcessOutput | O::ProcessMemory | O::StorageStatus | O::StorageCheck)
 }
 
 const TEXT_SCHEMA: &[Column] = &[Column::new("text", Kind::Text)];
@@ -124,6 +124,9 @@ const VAR_SCHEMA: &[Column] = &[Column::new("name", Kind::Text), Column::new("va
 const HISTORY_SCHEMA: &[Column] = &[Column::new("id", Kind::UInt), Column::new("part", Kind::UInt), Column::new("command", Kind::Text)];
 const PROGRAM_SCHEMA: &[Column] = &[Column::new("name", Kind::Text), Column::new("bytes", Kind::UInt)];
 const PROCESS_SCHEMA: &[Column] = &[Column::new("pid", Kind::UInt), Column::new("parent", Kind::UInt), Column::new("name", Kind::Text), Column::new("domain", Kind::Text), Column::new("state", Kind::Text), Column::new("cpu_ticks", Kind::UInt), Column::new("frames", Kind::UInt), Column::new("output_bytes", Kind::UInt)];
+const PROCESS_MEMORY_SCHEMA: &[Column] = &[Column::new("region", Kind::Text), Column::new("base", Kind::UInt), Column::new("bytes", Kind::UInt), Column::new("pages", Kind::UInt), Column::new("read", Kind::Bool), Column::new("write", Kind::Bool), Column::new("execute", Kind::Bool)];
+const STORAGE_SCHEMA: &[Column] = &[Column::new("mounted", Kind::Bool), Column::new("version", Kind::UInt), Column::new("readonly", Kind::Bool), Column::new("replayed", Kind::Bool), Column::new("sectors", Kind::UInt), Column::new("files", Kind::UInt), Column::new("model", Kind::Text), Column::new("error", Kind::Text)];
+const STORAGE_CHECK_SCHEMA: &[Column] = &[Column::new("files", Kind::UInt), Column::new("bytes", Kind::UInt)];
 
 fn schema(operation: O) -> &'static [Column] {
     match operation {
@@ -133,7 +136,9 @@ fn schema(operation: O) -> &'static [Column] {
         O::Ping => PING_SCHEMA, O::Security => SECURITY_SCHEMA, O::Resources => RESOURCE_SCHEMA,
         O::Audit => AUDIT_SCHEMA, O::Disk => DISK_SCHEMA, O::Ops => OPS_SCHEMA,
         O::Vars => VAR_SCHEMA, O::History => HISTORY_SCHEMA,
-        O::ProcessPrograms => PROGRAM_SCHEMA, O::ProcessList => PROCESS_SCHEMA, _ => &[],
+        O::ProcessPrograms => PROGRAM_SCHEMA, O::ProcessList => PROCESS_SCHEMA,
+        O::ProcessMemory => PROCESS_MEMORY_SCHEMA, O::StorageStatus => STORAGE_SCHEMA,
+        O::StorageCheck => STORAGE_CHECK_SCHEMA, _ => &[],
     }
 }
 
@@ -277,6 +282,12 @@ fn validate(operation: O, arguments: &[&str]) -> Result<(), &'static str> {
             file_name(arguments[0])
         }
         O::Cat | O::Remove | O::Run | O::Save => { exact(arguments, 1, usage)?; file_name(arguments[0]) }
+        O::Rename => { exact(arguments, 2, usage)?; file_name(arguments[0])?; file_name(arguments[1]) }
+        O::Truncate => {
+            exact(arguments, 2, usage)?; file_name(arguments[0])?;
+            if unsigned(arguments[1])? > crate::fs::MAX_FILE_SIZE as u64 { return Err("file size exceeds 4096 bytes"); }
+            Ok(())
+        }
         O::Sleep => {
             exact(arguments, 1, "usage: sleep MS (0-60000)")?;
             if unsigned(arguments[0]).map_err(|_| "usage: sleep MS (0-60000)")? > shell::MAX_SLEEP_MS {
@@ -326,7 +337,7 @@ fn validate(operation: O, arguments: &[&str]) -> Result<(), &'static str> {
             if crate::user_images::builtin(arguments[0]).is_none() { return Err("unknown builtin user program"); }
             file_name(arguments[1])
         }
-        O::ProcessWait | O::ProcessOutput => {
+        O::ProcessWait | O::ProcessOutput | O::ProcessMemory | O::ProcessPause | O::ProcessResume => {
             exact(arguments, 1, usage)?;
             let pid = unsigned(arguments[0])?;
             if pid == 0 || pid > u32::MAX as u64 { return Err("invalid process PID"); }
@@ -442,8 +453,24 @@ fn joined<'a>(arguments: &[&str], buffer: &'a mut Buffer<512>) -> Result<&'a str
 fn single(operation: O, arguments: &[&str], raw: &str, resolved: Resolved,
     keyboard: &mut Keyboard, editor: &mut Editor) -> ExecState {
     match operation {
-        O::ProcessPrograms | O::ProcessList | O::ProcessRun | O::ProcessExec | O::ProcessInstall | O::ProcessWait | O::ProcessOutput =>
+        O::ProcessPrograms | O::ProcessList | O::ProcessRun | O::ProcessExec | O::ProcessInstall | O::ProcessWait | O::ProcessOutput | O::ProcessPause | O::ProcessResume =>
             return crate::execute_process(operation, arguments, keyboard),
+        O::StorageSync => return match storage::sync() {
+            Ok(()) => { kprintln!("synced: disk write cache flushed"); ExecState::Success }
+            Err(failure) => storage_error(failure, false),
+        },
+        O::Upgrade => return match storage::upgrade() {
+            Ok(()) => { kprintln!("upgraded: TaneFS v2, files and labels preserved"); ExecState::Success }
+            Err(failure) => storage_error(failure, true),
+        },
+        O::Rename => return match storage::rename(arguments[0], arguments[1]) {
+            Ok(()) => { kprintln!("renamed: {} -> {}", arguments[0], arguments[1]); ExecState::Success }
+            Err(failure) => storage_error(failure, true),
+        },
+        O::Truncate => return match storage::truncate(arguments[0], unsigned(arguments[1]).unwrap_or(0) as usize) {
+            Ok(()) => { kprintln!("resized: {} to {} bytes", arguments[0], arguments[1]); ExecState::Success }
+            Err(failure) => storage_error(failure, true),
+        },
         O::Help => { help(arguments); return ExecState::Success; }
         O::Status => {
             let value = last();
@@ -464,7 +491,7 @@ fn single(operation: O, arguments: &[&str], raw: &str, resolved: Resolved,
         O::Show => return show_plan(),
         O::Apply => return apply_plan(arguments),
         O::Run => return run_script(arguments[0], keyboard, editor),
-        O::Ops | O::Vars => {
+        O::Ops | O::Vars | O::ProcessMemory | O::StorageStatus | O::StorageCheck => {
             let state = source(operation, arguments, keyboard, editor);
             if !matches!(state, ExecState::Success) { return state; }
             return records::write_table(table(), crate::console()).map(|_| ExecState::Success).unwrap_or_else(record_error);
@@ -622,7 +649,7 @@ fn source(operation: O, arguments: &[&str], keyboard: &mut Keyboard, editor: &Ed
         }
         O::Disk => (|| { match storage::status() {
             storage::Status::Absent => table().push_row(&[Cell::Bool(false), Cell::Bool(false), Cell::Null, Cell::Null, Cell::Null, text("no disk")?]),
-            storage::Status::Mounted { model, sectors, files } => table().push_row(&[Cell::Bool(true), Cell::Bool(true), text(model.as_str())?, Cell::UInt(sectors as u64), Cell::UInt(files as u64), Cell::Null]),
+            storage::Status::Mounted { model, sectors, files, .. } => table().push_row(&[Cell::Bool(true), Cell::Bool(true), text(model.as_str())?, Cell::UInt(sectors as u64), Cell::UInt(files as u64), Cell::Null]),
             storage::Status::Unformatted { model, sectors, error } => table().push_row(&[Cell::Bool(true), Cell::Bool(false), text(model.as_str())?, Cell::UInt(sectors as u64), Cell::Null, text(error.message())?]),
         } })(),
         O::Ops => (|| {
@@ -672,6 +699,35 @@ fn source(operation: O, arguments: &[&str], keyboard: &mut Keyboard, editor: &Ed
             }) { return crate::process_read_error(failure); }
             result
         }
+        O::ProcessMemory => {
+            let pid = arguments[0].parse::<u32>().unwrap_or(0);
+            let info = match crate::process::info(pid) {
+                Ok(info) => info, Err(failure) => return crate::process_read_error(failure),
+            };
+            if info.finished() { return error("process has no live address space"); }
+            (|| {
+                let mut region = |name: &str, base: u64, pages: usize, read: bool, write: bool, execute: bool| {
+                    table().push_row(&[text(name)?, Cell::UInt(base), Cell::UInt(pages as u64 * crate::usermem::PAGE_BYTES),
+                        Cell::UInt(pages as u64), Cell::Bool(read), Cell::Bool(write), Cell::Bool(execute)])
+                };
+                region("code", crate::usermem::CODE_BASE, 1, true, false, true)?;
+                region("data", crate::usermem::DATA_BASE, 1, true, true, false)?;
+                region("stack guard", crate::usermem::DATA_BASE + crate::usermem::PAGE_BYTES, 2, false, false, false)?;
+                region("stack", crate::usermem::STACK_BASE, 2, true, true, false)?;
+                if info.heap_pages != 0 { region("heap", crate::usermem::HEAP_BASE, info.heap_pages, true, true, false)?; }
+                region("heap guard", crate::usermem::HEAP_BASE + info.heap_pages as u64 * crate::usermem::PAGE_BYTES, 1, false, false, false)?;
+                Ok(())
+            })()
+        }
+        O::StorageStatus => (|| { match storage::status() {
+            storage::Status::Absent => table().push_row(&[Cell::Bool(false), Cell::Null, Cell::Null, Cell::Null, Cell::Null, Cell::Null, Cell::Null, text("no disk")?]),
+            storage::Status::Unformatted { model, sectors, error } => table().push_row(&[Cell::Bool(false), Cell::Null, Cell::Null, Cell::Null, Cell::UInt(sectors as u64), Cell::Null, text(model.as_str())?, text(error.message())?]),
+            storage::Status::Mounted { model, sectors, files, version, read_only, replayed } => table().push_row(&[Cell::Bool(true), Cell::UInt(version as u64), Cell::Bool(read_only), Cell::Bool(replayed), Cell::UInt(sectors as u64), Cell::UInt(files as u64), text(model.as_str())?, Cell::Null]),
+        } })(),
+        O::StorageCheck => match storage::check() {
+            Ok((files, bytes)) => table().push_row(&[Cell::UInt(files as u64), Cell::UInt(bytes)]),
+            Err(failure) => return storage_error(failure, false),
+        },
         _ => return error("operation is not a record source"),
     };
     result.map(|_| ExecState::Success).unwrap_or_else(record_error)

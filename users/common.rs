@@ -15,6 +15,22 @@ pub fn pid() -> u64 { syscall(2,0,0,0) as u64 }
 pub fn yield_now() { syscall(3,0,0,0); }
 pub fn sleep(ms: u64) -> i64 { syscall(4,ms,0,0) }
 pub fn ticks() -> u64 { syscall(10,0,0,0) as u64 }
+pub const HEAP_BASE: u64 = 0x4001_0000;
+pub fn heap(pages: u64) -> i64 { syscall(14,pages,0,0) }
+#[repr(C)]
+pub struct SpawnRequest { pub name: u64, pub name_len: u64, pub argument: u64, pub argument_len: u64, pub kind: u64 }
+pub fn spawn(name: &[u8], argument: &[u8], kind: u64) -> i64 {
+    let request = SpawnRequest { name: name.as_ptr() as u64, name_len: name.len() as u64,
+        argument: if argument.is_empty() { name.as_ptr() as u64 } else { argument.as_ptr() as u64 },
+        argument_len: argument.len() as u64, kind };
+    syscall(15, (&raw const request) as u64, 0, 0)
+}
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct ChildStatus { pub pid: u64, pub kind: u64, pub code: u64, pub vector: u64, pub error: u64 }
+impl ChildStatus { pub const fn empty() -> Self { Self { pid: 0, kind: 0, code: 0, vector: 0, error: 0 } } }
+pub fn wait(child: u64, result: &mut ChildStatus) -> i64 { syscall(16,child,result as *mut ChildStatus as u64,0) }
+pub fn kill(child: u64) -> i64 { syscall(17,child,0,0) }
 pub unsafe fn args<'a>(ptr: *const u8, len: usize) -> &'a [u8] {
     core::slice::from_raw_parts(ptr, len.min(128))
 }

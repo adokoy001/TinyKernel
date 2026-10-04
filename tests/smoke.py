@@ -672,7 +672,7 @@ def main():
         damaged.start()
         contains(damaged.output, b"Disk: TaneFS mounted, 8 files")
         contains(damaged.command(b"cat u0\r"), b"\r\ndata\r\n")
-        contains(damaged.command(b"cat keep.txt\r"), b"error: checksum mismatch: file contents are damaged")
+        contains(damaged.command(b"cat keep.txt\r"), b"error: filesystem checksum or metadata is damaged")
         damaged.close()
         checked("disk survives a QEMU restart; damaged contents are detected")
 

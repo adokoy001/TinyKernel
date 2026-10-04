@@ -8,5 +8,7 @@ pub static PROGRAMS: &[Program] = &[
     Program { name: "isolate", bytes: include_bytes!("../build/users/isolate.tane") },
     Program { name: "files", bytes: include_bytes!("../build/users/files.tane") },
     Program { name: "probe", bytes: include_bytes!("../build/users/probe.tane") },
+    Program { name: "heap", bytes: include_bytes!("../build/users/heap.tane") },
+    Program { name: "control", bytes: include_bytes!("../build/users/control.tane") },
 ];
 pub fn builtin(name: &str) -> Option<&'static [u8]> { PROGRAMS.iter().find(|program| program.name == name).map(|program| program.bytes) }

@@ -1,0 +1,36 @@
+Tane OS 0.9 heap, process-control and storage QEMU integration test
+Image SHA256: 9ffadfb1380bc0776577f36e49d20f04ee2f175184ce898131b651f2a5028ef6
+Elapsed: 29.07s
+Transport (advanced): local pipes (Unix sockets unavailable or disabled)
+Transport (advanced-persist): local pipes (Unix sockets unavailable or disabled)
+Transport (advanced-legacy): local pipes (Unix sockets unavailable or disabled)
+Transport (advanced-upgraded): local pipes (Unix sockets unavailable or disabled)
+PASS: Heap and process-control Rust executables are bounded and boot with clean resource accounting
+PASS: Heap grows with zeroed pages; syscall copy crosses heap pages and shrink-regrow preserves only retained bytes
+PASS: Heap rejects excessive pages and flags atomically; all eight released pages return zeroed
+PASS: Heap growth is charged to the shared user frame quota and a refused allocation leaks no pages
+PASS: Typed memory records show the actual RW/NX heap; quota rejection and kill reclaim its full twenty frames
+PASS: Real hardware rejects heap freed access and leaves the shell and frame pool intact
+PASS: Real hardware rejects heap nx access and leaves the shell and frame pool intact
+PASS: Real hardware rejects heap guard access and leaves the shell and frame pool intact
+PASS: Pause halts scheduling without releasing memory; resume restores preemptible execution
+PASS: Invalid memory and process-control targets are rejected; mutating control cannot run as a pipeline source
+PASS: A ring 3 parent receives its basic child outcome once and can reuse its child slot
+PASS: A ring 3 parent receives its exit child outcome once and can reuse its child slot
+PASS: A ring 3 parent receives its fault child outcome once and can reuse its child slot
+PASS: A ring 3 parent receives its kill child outcome once and can reuse its child slot
+PASS: Spawn and wait validate whole pointers, lengths and flags; bad status buffers do not consume a child and cross-page copy succeeds
+PASS: A real concurrent User PID grants no direct-child wait or kill authority
+PASS: A parent's heap can exhaust child-creation quota; freeing it permits a clean retry
+PASS: wait blocks the parent in the scheduler while its independently mapped child sleeps, then resumes on completion
+PASS: A child's completion delivers a wait result without scheduling its paused parent; resume consumes the result safely
+PASS: A completed child remains waitable after ten unrelated exits and occupies its parent's slot until consumption
+PASS: Parent death leaves its child alive; old completion cannot target the replacement task in the reused slot
+PASS: Normal parent exit also preserves a live child's execution and eventual full reclamation
+PASS: User seek, positioned write and truncate enforce capabilities, stale identities, cursor rollback and zero-filled growth
+PASS: Rename preserves labels and refuses overwrite; truncate changes length and invalidates staged shell plans
+PASS: Typed disk status and checksum verification report visible files; explicit sync completes through the ATA driver
+PASS: MAC protects rename, truncate, sync and file-backed child creation while checksum reports follow caller visibility
+PASS: Renamed and truncated files plus file-backed child code survive a fresh QEMU boot
+PASS: Legacy v1 mounts read-only with bytes and labels intact; explicit upgrade enables v2 writes and survives reboot
+RESULT: PASS

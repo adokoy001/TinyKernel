@@ -199,6 +199,7 @@ mod tests {
             *self.0.get_mut(lba as usize).ok_or(DiskError::Device)? = *buffer;
             Ok(())
         }
+        fn flush(&mut self) -> Result<(), DiskError> { Ok(()) }
     }
     fn identity(fs: &mut FileSystem<MemoryDisk>, name: &str) -> Snapshot {
         match fs.find(name) {

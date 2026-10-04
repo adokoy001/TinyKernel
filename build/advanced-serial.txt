@@ -1,0 +1,1283 @@
+
+--- QEMU advanced ---
+TANE OS / RUST BARE METAL
+Self-made BIOS loader + Rust kernel. External crates: 0.
+64-bit mode | VGA + COM1 | PS/2 keyboard | bounded user heap
+RAM: 7 E820 entries | 16058 free 4 KiB frames (64232 KiB) above 1 MiB
+IDT: 32 exception handlers, #DF on IST1 | PIT timer 100 Hz
+Tasks: preemptive round robin, up to 8 tasks
+Protection: NX data | kernel text read-only | null page unmapped | CR0.WP
+MAC: enforcing compiled-in policy | shell domain admin (drop lowers it)
+Disk: ATA found; disk is not formatted (admin: format)
+Network: unavailable (RTL8139 PCI device not found)
+Type help. English keyboard / ASCII input.
+READY
+tane> format
+formatted: empty TaneFS, 32 files of up to 4096 bytes
+tane> proc list | json
+[]
+tane> mem | json
+[{"usable":16058,"free":16058,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc programs | json
+[{"name":"hello","bytes":544},{"name":"echo","bytes":90},{"name":"busy","bytes":79},{"name":"sleep","bytes":259},{"name":"isolate","bytes":786},{"name":"files","bytes":3387},{"name":"probe","bytes":2541},{"name":"heap","bytes":1815},{"name":"control","bytes":4007}]
+tane> proc list | json
+[]
+tane> mem | json
+[{"usable":16058,"free":16058,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run heap "basic"
+started user process as pid 2 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 2
+CROSSPAGE
+heap: grow cross-page shrink-regrow zeroing ok
+process 2 exited status 0 | domain user | cpu 1 ticks
+tane> status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane> proc list | json
+[{"pid":2,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":57}]
+tane> proc output 2
+CROSSPAGE
+heap: grow cross-page shrink-regrow zeroing ok
+tane> proc list | json
+[{"pid":2,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":57}]
+tane> mem | json
+[{"usable":16058,"free":16058,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc list | json
+[{"pid":2,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":57}]
+tane> mem | json
+[{"usable":16058,"free":16058,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run heap "limit"
+started user process as pid 3 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 3
+heap: limit flags and full release-regrow zeroing ok
+process 3 exited status 0 | domain user | cpu 0 ticks
+tane> status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane> proc list | json
+[{"pid":2,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":57},{"pid":3,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":53}]
+tane> proc output 3
+heap: limit flags and full release-regrow zeroing ok
+tane> proc list | json
+[{"pid":2,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":57},{"pid":3,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":53}]
+tane> mem | json
+[{"usable":16058,"free":16058,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run busy
+started user process as pid 4 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc list | json
+[{"pid":4,"parent":1,"name":"busy","domain":"user","state":"ready","cpu_ticks":7,"frames":12,"output_bytes":28},{"pid":2,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":57},{"pid":3,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":53}]
+tane> mem | json
+[{"usable":16058,"free":16046,"used":12,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":1,"frames":12,"files":0,"cpu_ticks":11,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc list | json
+[{"pid":4,"parent":1,"name":"busy","domain":"user","state":"ready","cpu_ticks":15,"frames":12,"output_bytes":28},{"pid":2,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":57},{"pid":3,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":53}]
+tane> mem | json
+[{"usable":16058,"free":16046,"used":12,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":1,"frames":12,"files":0,"cpu_ticks":11,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run heap "quota"
+started user process as pid 5 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 5
+heap: shared user quota rejected growth
+process 5 exited status 0 | domain user | cpu 0 ticks
+tane> status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane> proc list | json
+[{"pid":4,"parent":1,"name":"busy","domain":"user","state":"ready","cpu_ticks":36,"frames":12,"output_bytes":28},{"pid":2,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":57},{"pid":3,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":53},{"pid":5,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40}]
+tane> proc output 5
+heap: shared user quota rejected growth
+tane> proc list | json
+[{"pid":4,"parent":1,"name":"busy","domain":"user","state":"ready","cpu_ticks":43,"frames":12,"output_bytes":28},{"pid":2,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":57},{"pid":3,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":53},{"pid":5,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40}]
+tane> mem | json
+[{"usable":16058,"free":16046,"used":12,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":1,"frames":12,"files":0,"cpu_ticks":11,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc list | json
+[{"pid":4,"parent":1,"name":"busy","domain":"user","state":"ready","cpu_ticks":50,"frames":12,"output_bytes":28},{"pid":2,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":57},{"pid":3,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":53},{"pid":5,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40}]
+tane> mem | json
+[{"usable":16058,"free":16046,"used":12,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":1,"frames":12,"files":0,"cpu_ticks":11,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> task kill 4
+killed pid 4 (busy); 16058 frames free
+tane> proc wait 4
+busy: preemptible user loop
+process 4 killed
+tane> status | json
+[{"code":"error","operation":"proc wait","message":"command failed"}]
+tane> proc list | json
+[{"pid":2,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":57},{"pid":3,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":53},{"pid":5,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40},{"pid":4,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":56,"frames":0,"output_bytes":28}]
+tane> proc list | json
+[{"pid":2,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":57},{"pid":3,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":53},{"pid":5,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40},{"pid":4,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":56,"frames":0,"output_bytes":28}]
+tane> mem | json
+[{"usable":16058,"free":16058,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":11,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run heap "hold 85"
+started user process as pid 6 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc list | json
+[{"pid":6,"parent":1,"name":"heap","domain":"user","state":"sleeping","cpu_ticks":0,"frames":20,"output_bytes":29},{"pid":2,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":57},{"pid":3,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":53},{"pid":5,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40},{"pid":4,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":56,"frames":0,"output_bytes":28}]
+tane> mem | json
+[{"usable":16058,"free":16038,"used":20,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":1,"frames":20,"files":0,"cpu_ticks":11,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc memory 6 | json
+[{"region":"code","base":1073741824,"bytes":4096,"pages":1,"read":true,"write":false,"execute":true},{"region":"data","base":1073745920,"bytes":4096,"pages":1,"read":true,"write":true,"execute":false},{"region":"stack guard","base":1073750016,"bytes":8192,"pages":2,"read":false,"write":false,"execute":false},{"region":"stack","base":1073758208,"bytes":8192,"pages":2,"read":true,"write":true,"execute":false},{"region":"heap","base":1073807360,"bytes":32768,"pages":8,"read":true,"write":true,"execute":false},{"region":"heap guard","base":1073840128,"bytes":4096,"pages":1,"read":false,"write":false,"execute":false}]
+tane> proc run hello
+denied: user frames limit reached (20/24) for spawn (quota; audited)
+tane> proc list | json
+[{"pid":6,"parent":1,"name":"heap","domain":"user","state":"sleeping","cpu_ticks":0,"frames":20,"output_bytes":29},{"pid":2,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":57},{"pid":3,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":53},{"pid":5,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40},{"pid":4,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":56,"frames":0,"output_bytes":28}]
+tane> mem | json
+[{"usable":16058,"free":16038,"used":20,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":1,"frames":20,"files":0,"cpu_ticks":46,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> task kill 6
+killed pid 6 (heap); 16058 frames free
+tane> proc wait 6
+heap: holding 8 zeroed pages
+process 6 killed
+tane> status | json
+[{"code":"error","operation":"proc wait","message":"command failed"}]
+tane> proc list | json
+[{"pid":2,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":57},{"pid":3,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":53},{"pid":5,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40},{"pid":4,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":56,"frames":0,"output_bytes":28},{"pid":6,"parent":1,"name":"heap","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":29}]
+tane> proc list | json
+[{"pid":2,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":57},{"pid":3,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":53},{"pid":5,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40},{"pid":4,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":56,"frames":0,"output_bytes":28},{"pid":6,"parent":1,"name":"heap","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":29}]
+tane> mem | json
+[{"usable":16058,"free":16058,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":46,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc list | json
+[{"pid":2,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":57},{"pid":3,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":53},{"pid":5,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40},{"pid":4,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":56,"frames":0,"output_bytes":28},{"pid":6,"parent":1,"name":"heap","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":29}]
+tane> mem | json
+[{"usable":16058,"free":16058,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":46,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run heap "limit"
+started user process as pid 7 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 7
+heap: limit flags and full release-regrow zeroing ok
+process 7 exited status 0 | domain user | cpu 1 ticks
+tane> status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane> proc list | json
+[{"pid":2,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":57},{"pid":3,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":53},{"pid":5,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40},{"pid":4,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":56,"frames":0,"output_bytes":28},{"pid":6,"parent":1,"name":"heap","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":7,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":53}]
+tane> proc output 7
+heap: limit flags and full release-regrow zeroing ok
+tane> proc list | json
+[{"pid":2,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":57},{"pid":3,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":53},{"pid":5,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40},{"pid":4,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":56,"frames":0,"output_bytes":28},{"pid":6,"parent":1,"name":"heap","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":7,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":53}]
+tane> mem | json
+[{"usable":16058,"free":16058,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":46,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run heap "freed"
+started user process as pid 8 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 8
+heap: accessing freed page
+process 8 fault vector 14 error 0x4 rip 0x400004f5 address 0x40011000; process terminated
+tane> status | json
+[{"code":"error","operation":"proc wait","message":"command failed"}]
+tane> proc list | json
+[{"pid":2,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":57},{"pid":3,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":53},{"pid":5,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40},{"pid":4,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":56,"frames":0,"output_bytes":28},{"pid":6,"parent":1,"name":"heap","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":7,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":53},{"pid":8,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":27}]
+tane> proc list | json
+[{"pid":2,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":57},{"pid":3,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":53},{"pid":5,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40},{"pid":4,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":56,"frames":0,"output_bytes":28},{"pid":6,"parent":1,"name":"heap","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":7,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":53},{"pid":8,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":27}]
+tane> mem | json
+[{"usable":16058,"free":16058,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":46,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run heap "nx"
+started user process as pid 9 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 9
+heap: executing NX page
+process 9 fault vector 14 error 0x15 rip 0x40010000 address 0x40010000; process terminated
+tane> status | json
+[{"code":"error","operation":"proc wait","message":"command failed"}]
+tane> proc list | json
+[{"pid":2,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":57},{"pid":3,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":53},{"pid":5,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40},{"pid":4,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":56,"frames":0,"output_bytes":28},{"pid":6,"parent":1,"name":"heap","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":7,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":53},{"pid":8,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":27},{"pid":9,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":24}]
+tane> proc list | json
+[{"pid":2,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":57},{"pid":3,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":53},{"pid":5,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40},{"pid":4,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":56,"frames":0,"output_bytes":28},{"pid":6,"parent":1,"name":"heap","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":7,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":53},{"pid":8,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":27},{"pid":9,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":24}]
+tane> mem | json
+[{"usable":16058,"free":16058,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":1,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run heap "guard"
+started user process as pid 10 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 10
+heap: accessing unmapped guard
+process 10 fault vector 14 error 0x4 rip 0x4000050d address 0x4000f000; process terminated
+tane> status | json
+[{"code":"error","operation":"proc wait","message":"command failed"}]
+tane> proc list | json
+[{"pid":3,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":53},{"pid":5,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40},{"pid":4,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":56,"frames":0,"output_bytes":28},{"pid":6,"parent":1,"name":"heap","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":7,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":53},{"pid":8,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":27},{"pid":9,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":24},{"pid":10,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":31}]
+tane> proc list | json
+[{"pid":3,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":53},{"pid":5,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40},{"pid":4,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":56,"frames":0,"output_bytes":28},{"pid":6,"parent":1,"name":"heap","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":7,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":53},{"pid":8,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":27},{"pid":9,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":24},{"pid":10,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":31}]
+tane> mem | json
+[{"usable":16058,"free":16058,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":1,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run busy
+started user process as pid 11 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc pause 11 | json
+error: pipeline sources must be read operations or bounded ping
+tane> proc list | json
+[{"pid":11,"parent":1,"name":"busy","domain":"user","state":"ready","cpu_ticks":11,"frames":12,"output_bytes":28},{"pid":3,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":53},{"pid":5,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40},{"pid":4,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":56,"frames":0,"output_bytes":28},{"pid":6,"parent":1,"name":"heap","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":7,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":53},{"pid":8,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":27},{"pid":9,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":24},{"pid":10,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":31}]
+tane> proc pause 11
+paused pid 11 (busy)
+tane> status | json
+[{"code":"success","operation":"proc pause","message":"completed"}]
+tane> proc list | json
+[{"pid":11,"parent":1,"name":"busy","domain":"user","state":"stopped","cpu_ticks":15,"frames":12,"output_bytes":28},{"pid":3,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":53},{"pid":5,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40},{"pid":4,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":56,"frames":0,"output_bytes":28},{"pid":6,"parent":1,"name":"heap","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":7,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":53},{"pid":8,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":27},{"pid":9,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":24},{"pid":10,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":31}]
+tane> proc list | json
+[{"pid":11,"parent":1,"name":"busy","domain":"user","state":"stopped","cpu_ticks":15,"frames":12,"output_bytes":28},{"pid":3,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":53},{"pid":5,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40},{"pid":4,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":56,"frames":0,"output_bytes":28},{"pid":6,"parent":1,"name":"heap","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":7,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":53},{"pid":8,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":27},{"pid":9,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":24},{"pid":10,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":31}]
+tane> mem | json
+[{"usable":16058,"free":16046,"used":12,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":1,"frames":12,"files":0,"cpu_ticks":1,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> sleep 150
+slept 150 ms
+tane> proc list | json
+[{"pid":11,"parent":1,"name":"busy","domain":"user","state":"stopped","cpu_ticks":15,"frames":12,"output_bytes":28},{"pid":3,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":53},{"pid":5,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40},{"pid":4,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":56,"frames":0,"output_bytes":28},{"pid":6,"parent":1,"name":"heap","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":7,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":53},{"pid":8,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":27},{"pid":9,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":24},{"pid":10,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":31}]
+tane> proc list | json
+[{"pid":11,"parent":1,"name":"busy","domain":"user","state":"stopped","cpu_ticks":15,"frames":12,"output_bytes":28},{"pid":3,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":53},{"pid":5,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40},{"pid":4,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":56,"frames":0,"output_bytes":28},{"pid":6,"parent":1,"name":"heap","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":7,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":53},{"pid":8,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":27},{"pid":9,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":24},{"pid":10,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":31}]
+tane> mem | json
+[{"usable":16058,"free":16046,"used":12,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":1,"frames":12,"files":0,"cpu_ticks":15,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc resume 11
+resumed pid 11 (busy)
+tane> status | json
+[{"code":"success","operation":"proc resume","message":"completed"}]
+tane> sleep 1100
+slept 1100 ms
+tane> proc list | json
+[{"pid":11,"parent":1,"name":"busy","domain":"user","state":"ready","cpu_ticks":133,"frames":12,"output_bytes":28},{"pid":3,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":53},{"pid":5,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40},{"pid":4,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":56,"frames":0,"output_bytes":28},{"pid":6,"parent":1,"name":"heap","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":7,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":53},{"pid":8,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":27},{"pid":9,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":24},{"pid":10,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":31}]
+tane> task kill 11
+killed pid 11 (busy); 16058 frames free
+tane> proc wait 11
+busy: preemptible user loop
+process 11 killed
+tane> status | json
+[{"code":"error","operation":"proc wait","message":"command failed"}]
+tane> proc list | json
+[{"pid":5,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40},{"pid":4,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":56,"frames":0,"output_bytes":28},{"pid":6,"parent":1,"name":"heap","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":7,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":53},{"pid":8,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":27},{"pid":9,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":24},{"pid":10,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":31},{"pid":11,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":136,"frames":0,"output_bytes":28}]
+tane> proc list | json
+[{"pid":5,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40},{"pid":4,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":56,"frames":0,"output_bytes":28},{"pid":6,"parent":1,"name":"heap","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":7,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":53},{"pid":8,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":27},{"pid":9,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":24},{"pid":10,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":31},{"pid":11,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":136,"frames":0,"output_bytes":28}]
+tane> mem | json
+[{"usable":16058,"free":16058,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":87,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc memory 999999
+error: no such user process or retained result
+tane> proc list | json
+[{"pid":5,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40},{"pid":4,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":56,"frames":0,"output_bytes":28},{"pid":6,"parent":1,"name":"heap","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":7,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":53},{"pid":8,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":27},{"pid":9,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":24},{"pid":10,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":31},{"pid":11,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":136,"frames":0,"output_bytes":28}]
+tane> mem | json
+[{"usable":16058,"free":16058,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":87,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc memory 1
+error: no such user process or retained result
+tane> proc list | json
+[{"pid":5,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40},{"pid":4,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":56,"frames":0,"output_bytes":28},{"pid":6,"parent":1,"name":"heap","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":7,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":53},{"pid":8,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":27},{"pid":9,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":24},{"pid":10,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":31},{"pid":11,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":136,"frames":0,"output_bytes":28}]
+tane> mem | json
+[{"usable":16058,"free":16058,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":87,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc pause 0
+error: invalid process PID
+tane> proc list | json
+[{"pid":5,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40},{"pid":4,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":56,"frames":0,"output_bytes":28},{"pid":6,"parent":1,"name":"heap","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":7,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":53},{"pid":8,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":27},{"pid":9,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":24},{"pid":10,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":31},{"pid":11,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":136,"frames":0,"output_bytes":28}]
+tane> mem | json
+[{"usable":16058,"free":16058,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":87,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc pause 1
+error: only another user process can be suspended
+tane> proc list | json
+[{"pid":5,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40},{"pid":4,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":56,"frames":0,"output_bytes":28},{"pid":6,"parent":1,"name":"heap","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":7,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":53},{"pid":8,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":27},{"pid":9,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":24},{"pid":10,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":31},{"pid":11,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":136,"frames":0,"output_bytes":28}]
+tane> mem | json
+[{"usable":16058,"free":16058,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":34,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc resume 999999
+error: no such task
+tane> proc list | json
+[{"pid":5,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40},{"pid":4,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":56,"frames":0,"output_bytes":28},{"pid":6,"parent":1,"name":"heap","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":7,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":53},{"pid":8,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":27},{"pid":9,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":24},{"pid":10,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":31},{"pid":11,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":136,"frames":0,"output_bytes":28}]
+tane> mem | json
+[{"usable":16058,"free":16058,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":34,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc pause
+error: proc pause PID
+tane> proc list | json
+[{"pid":5,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40},{"pid":4,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":56,"frames":0,"output_bytes":28},{"pid":6,"parent":1,"name":"heap","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":7,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":53},{"pid":8,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":27},{"pid":9,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":24},{"pid":10,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":31},{"pid":11,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":136,"frames":0,"output_bytes":28}]
+tane> mem | json
+[{"usable":16058,"free":16058,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":34,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc list | json
+[{"pid":5,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40},{"pid":4,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":56,"frames":0,"output_bytes":28},{"pid":6,"parent":1,"name":"heap","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":29},{"pid":7,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":53},{"pid":8,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":27},{"pid":9,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":24},{"pid":10,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":31},{"pid":11,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":136,"frames":0,"output_bytes":28}]
+tane> mem | json
+[{"usable":16058,"free":16058,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":34,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run control "basic"
+started user process as pid 12 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 12
+control: child=13
+control: outcome consumed and child slot reusable
+process 12 exited status 0 | domain user | cpu 0 ticks
+tane> status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane> proc list | json
+[{"pid":7,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":53},{"pid":8,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":27},{"pid":9,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":24},{"pid":10,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":31},{"pid":11,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":136,"frames":0,"output_bytes":28},{"pid":13,"parent":12,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":24},{"pid":14,"parent":12,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":12,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":68}]
+tane> proc output 12
+control: child=13
+control: outcome consumed and child slot reusable
+tane> proc list | json
+[{"pid":7,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":53},{"pid":8,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":27},{"pid":9,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":24},{"pid":10,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":31},{"pid":11,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":136,"frames":0,"output_bytes":28},{"pid":13,"parent":12,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":24},{"pid":14,"parent":12,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":12,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":68}]
+tane> mem | json
+[{"usable":16058,"free":16058,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":34,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc output 12
+control: child=13
+control: outcome consumed and child slot reusable
+tane> proc list | json
+[{"pid":7,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":53},{"pid":8,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":27},{"pid":9,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":24},{"pid":10,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":31},{"pid":11,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":136,"frames":0,"output_bytes":28},{"pid":13,"parent":12,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":24},{"pid":14,"parent":12,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":12,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":68}]
+tane> proc output 13
+child literal | command
+tane> proc list | json
+[{"pid":7,"parent":1,"name":"heap","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":53},{"pid":8,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":27},{"pid":9,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":24},{"pid":10,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":31},{"pid":11,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":136,"frames":0,"output_bytes":28},{"pid":13,"parent":12,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":24},{"pid":14,"parent":12,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":12,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":68}]
+tane> mem | json
+[{"usable":16058,"free":16058,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":34,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run control "exit"
+started user process as pid 15 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 15
+control: child=16
+control: outcome consumed and child slot reusable
+process 15 exited status 0 | domain user | cpu 0 ticks
+tane> status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane> proc list | json
+[{"pid":10,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":31},{"pid":11,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":136,"frames":0,"output_bytes":28},{"pid":13,"parent":12,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":24},{"pid":14,"parent":12,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":12,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":68},{"pid":16,"parent":15,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":0},{"pid":17,"parent":15,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":15,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":68}]
+tane> proc output 15
+control: child=16
+control: outcome consumed and child slot reusable
+tane> proc list | json
+[{"pid":10,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":31},{"pid":11,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":136,"frames":0,"output_bytes":28},{"pid":13,"parent":12,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":24},{"pid":14,"parent":12,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":12,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":68},{"pid":16,"parent":15,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":0},{"pid":17,"parent":15,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":15,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":68}]
+tane> mem | json
+[{"usable":16058,"free":16058,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc output 15
+control: child=16
+control: outcome consumed and child slot reusable
+tane> proc list | json
+[{"pid":10,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":31},{"pid":11,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":136,"frames":0,"output_bytes":28},{"pid":13,"parent":12,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":24},{"pid":14,"parent":12,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":12,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":68},{"pid":16,"parent":15,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":0},{"pid":17,"parent":15,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":15,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":68}]
+tane> proc list | json
+[{"pid":10,"parent":1,"name":"heap","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":31},{"pid":11,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":136,"frames":0,"output_bytes":28},{"pid":13,"parent":12,"name":"echo","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":24},{"pid":14,"parent":12,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":12,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":68},{"pid":16,"parent":15,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":0},{"pid":17,"parent":15,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":15,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":68}]
+tane> mem | json
+[{"usable":16058,"free":16058,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run control "fault"
+started user process as pid 18 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 18
+control: child=19
+control: outcome consumed and child slot reusable
+process 18 exited status 0 | domain user | cpu 0 ticks
+tane> status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane> proc list | json
+[{"pid":14,"parent":12,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":12,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":68},{"pid":16,"parent":15,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":0},{"pid":17,"parent":15,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":15,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":68},{"pid":19,"parent":18,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":12},{"pid":20,"parent":18,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":18,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":68}]
+tane> proc output 18
+control: child=19
+control: outcome consumed and child slot reusable
+tane> proc list | json
+[{"pid":14,"parent":12,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":12,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":68},{"pid":16,"parent":15,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":0},{"pid":17,"parent":15,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":15,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":68},{"pid":19,"parent":18,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":12},{"pid":20,"parent":18,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":18,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":68}]
+tane> mem | json
+[{"usable":16058,"free":16058,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc output 18
+control: child=19
+control: outcome consumed and child slot reusable
+tane> proc list | json
+[{"pid":14,"parent":12,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":12,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":68},{"pid":16,"parent":15,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":0},{"pid":17,"parent":15,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":15,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":68},{"pid":19,"parent":18,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":12},{"pid":20,"parent":18,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":18,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":68}]
+tane> proc list | json
+[{"pid":14,"parent":12,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":12,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":68},{"pid":16,"parent":15,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":0},{"pid":17,"parent":15,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":15,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":68},{"pid":19,"parent":18,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":12},{"pid":20,"parent":18,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":18,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":68}]
+tane> mem | json
+[{"usable":16058,"free":16058,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run control "kill"
+started user process as pid 21 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 21
+control: child=22
+control: outcome consumed and child slot reusable
+process 21 exited status 0 | domain user | cpu 1 ticks
+tane> status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane> proc list | json
+[{"pid":17,"parent":15,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":15,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":68},{"pid":19,"parent":18,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":12},{"pid":20,"parent":18,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":18,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":68},{"pid":22,"parent":21,"name":"sleep","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":0},{"pid":23,"parent":21,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":21,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":68}]
+tane> proc output 21
+control: child=22
+control: outcome consumed and child slot reusable
+tane> proc list | json
+[{"pid":17,"parent":15,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":15,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":68},{"pid":19,"parent":18,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":12},{"pid":20,"parent":18,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":18,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":68},{"pid":22,"parent":21,"name":"sleep","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":0},{"pid":23,"parent":21,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":21,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":68}]
+tane> mem | json
+[{"usable":16058,"free":16058,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":1,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc output 21
+control: child=22
+control: outcome consumed and child slot reusable
+tane> proc list | json
+[{"pid":17,"parent":15,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":15,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":68},{"pid":19,"parent":18,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":12},{"pid":20,"parent":18,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":18,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":68},{"pid":22,"parent":21,"name":"sleep","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":0},{"pid":23,"parent":21,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":21,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":68}]
+tane> proc list | json
+[{"pid":17,"parent":15,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":15,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":68},{"pid":19,"parent":18,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":12},{"pid":20,"parent":18,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":18,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":68},{"pid":22,"parent":21,"name":"sleep","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":0},{"pid":23,"parent":21,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":21,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":68}]
+tane> mem | json
+[{"usable":16058,"free":16058,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":1,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run control "validate"
+started user process as pid 24 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 24
+control: pointers flags foreign and consumed child rejected
+process 24 exited status 0 | domain user | cpu 0 ticks
+tane> status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane> proc list | json
+[{"pid":19,"parent":18,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":12},{"pid":20,"parent":18,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":18,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":68},{"pid":22,"parent":21,"name":"sleep","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":0},{"pid":23,"parent":21,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":21,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":68},{"pid":25,"parent":24,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":24,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":60}]
+tane> proc output 24
+control: pointers flags foreign and consumed child rejected
+tane> proc list | json
+[{"pid":19,"parent":18,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":12},{"pid":20,"parent":18,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":18,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":68},{"pid":22,"parent":21,"name":"sleep","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":0},{"pid":23,"parent":21,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":21,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":68},{"pid":25,"parent":24,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":24,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":60}]
+tane> mem | json
+[{"usable":16058,"free":16058,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":1,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run busy
+started user process as pid 26 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc list | json
+[{"pid":26,"parent":1,"name":"busy","domain":"user","state":"ready","cpu_ticks":6,"frames":12,"output_bytes":28},{"pid":19,"parent":18,"name":"probe","domain":"user","state":"faulted","cpu_ticks":0,"frames":0,"output_bytes":12},{"pid":20,"parent":18,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":18,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":68},{"pid":22,"parent":21,"name":"sleep","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":0},{"pid":23,"parent":21,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":21,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":68},{"pid":25,"parent":24,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":24,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":60}]
+tane> mem | json
+[{"usable":16058,"free":16046,"used":12,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":1,"frames":12,"files":0,"cpu_ticks":1,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run control "foreign 26"
+started user process as pid 27 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 27
+control: live foreign process protected
+process 27 exited status 0 | domain user | cpu 0 ticks
+tane> status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane> proc list | json
+[{"pid":26,"parent":1,"name":"busy","domain":"user","state":"ready","cpu_ticks":31,"frames":12,"output_bytes":28},{"pid":20,"parent":18,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":18,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":68},{"pid":22,"parent":21,"name":"sleep","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":0},{"pid":23,"parent":21,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":21,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":68},{"pid":25,"parent":24,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":24,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":60},{"pid":27,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40}]
+tane> proc output 27
+control: live foreign process protected
+tane> proc list | json
+[{"pid":26,"parent":1,"name":"busy","domain":"user","state":"ready","cpu_ticks":39,"frames":12,"output_bytes":28},{"pid":20,"parent":18,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":18,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":68},{"pid":22,"parent":21,"name":"sleep","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":0},{"pid":23,"parent":21,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":21,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":68},{"pid":25,"parent":24,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":24,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":60},{"pid":27,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40}]
+tane> mem | json
+[{"usable":16058,"free":16046,"used":12,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":1,"frames":12,"files":0,"cpu_ticks":30,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc list | json
+[{"pid":26,"parent":1,"name":"busy","domain":"user","state":"ready","cpu_ticks":48,"frames":12,"output_bytes":28},{"pid":20,"parent":18,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":18,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":68},{"pid":22,"parent":21,"name":"sleep","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":0},{"pid":23,"parent":21,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":21,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":68},{"pid":25,"parent":24,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":24,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":60},{"pid":27,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40}]
+tane> task kill 26
+killed pid 26 (busy); 16058 frames free
+tane> proc wait 26
+busy: preemptible user loop
+process 26 killed
+tane> status | json
+[{"code":"error","operation":"proc wait","message":"command failed"}]
+tane> proc list | json
+[{"pid":18,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":68},{"pid":22,"parent":21,"name":"sleep","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":0},{"pid":23,"parent":21,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":21,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":68},{"pid":25,"parent":24,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":24,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":60},{"pid":27,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40},{"pid":26,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":52,"frames":0,"output_bytes":28}]
+tane> proc list | json
+[{"pid":18,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":68},{"pid":22,"parent":21,"name":"sleep","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":0},{"pid":23,"parent":21,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":21,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":68},{"pid":25,"parent":24,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":24,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":60},{"pid":27,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40},{"pid":26,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":52,"frames":0,"output_bytes":28}]
+tane> mem | json
+[{"usable":16058,"free":16058,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":30,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc list | json
+[{"pid":18,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":68},{"pid":22,"parent":21,"name":"sleep","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":0},{"pid":23,"parent":21,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":21,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":68},{"pid":25,"parent":24,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":24,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":60},{"pid":27,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40},{"pid":26,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":52,"frames":0,"output_bytes":28}]
+tane> mem | json
+[{"usable":16058,"free":16058,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":30,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run control "quota"
+started user process as pid 28 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 28
+control: child quota rollback and retry ok
+process 28 exited status 0 | domain user | cpu 0 ticks
+tane> status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane> proc list | json
+[{"pid":23,"parent":21,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":21,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":68},{"pid":25,"parent":24,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":24,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":60},{"pid":27,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40},{"pid":26,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":52,"frames":0,"output_bytes":28},{"pid":29,"parent":28,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":28,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":43}]
+tane> proc output 28
+control: child quota rollback and retry ok
+tane> proc list | json
+[{"pid":23,"parent":21,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":21,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":68},{"pid":25,"parent":24,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":24,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":60},{"pid":27,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40},{"pid":26,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":52,"frames":0,"output_bytes":28},{"pid":29,"parent":28,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":28,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":43}]
+tane> mem | json
+[{"usable":16058,"free":16058,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":30,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run control "live"
+started user process as pid 30 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc list | json
+[{"pid":30,"parent":1,"name":"control","domain":"user","state":"waiting","cpu_ticks":0,"frames":12,"output_bytes":18},{"pid":31,"parent":30,"name":"sleep","domain":"user","state":"sleeping","cpu_ticks":0,"frames":12,"output_bytes":13},{"pid":23,"parent":21,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":21,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":68},{"pid":25,"parent":24,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":24,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":60},{"pid":27,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40},{"pid":26,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":52,"frames":0,"output_bytes":28},{"pid":29,"parent":28,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":28,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":43}]
+tane> proc list | json
+[{"pid":30,"parent":1,"name":"control","domain":"user","state":"waiting","cpu_ticks":0,"frames":12,"output_bytes":18},{"pid":31,"parent":30,"name":"sleep","domain":"user","state":"sleeping","cpu_ticks":0,"frames":12,"output_bytes":13},{"pid":23,"parent":21,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":21,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":68},{"pid":25,"parent":24,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":24,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":60},{"pid":27,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40},{"pid":26,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":52,"frames":0,"output_bytes":28},{"pid":29,"parent":28,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":28,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":43}]
+tane> proc list | json
+[{"pid":30,"parent":1,"name":"control","domain":"user","state":"waiting","cpu_ticks":0,"frames":12,"output_bytes":18},{"pid":31,"parent":30,"name":"sleep","domain":"user","state":"sleeping","cpu_ticks":0,"frames":12,"output_bytes":13},{"pid":23,"parent":21,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":21,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":68},{"pid":25,"parent":24,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":24,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":60},{"pid":27,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40},{"pid":26,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":52,"frames":0,"output_bytes":28},{"pid":29,"parent":28,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":28,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":43}]
+tane> mem | json
+[{"usable":16058,"free":16034,"used":24,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":2,"frames":24,"files":0,"cpu_ticks":22,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc wait 30
+control: child=31
+control: blocked wait resumed
+process 30 exited status 0 | domain user | cpu 0 ticks
+tane> status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane> proc list | json
+[{"pid":25,"parent":24,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":24,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":60},{"pid":27,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40},{"pid":26,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":52,"frames":0,"output_bytes":28},{"pid":29,"parent":28,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":28,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":43},{"pid":31,"parent":30,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":30,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":48}]
+tane> proc list | json
+[{"pid":25,"parent":24,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":24,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":60},{"pid":27,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40},{"pid":26,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":52,"frames":0,"output_bytes":28},{"pid":29,"parent":28,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":28,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":43},{"pid":31,"parent":30,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":30,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":48}]
+tane> mem | json
+[{"usable":16058,"free":16058,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run control "live"
+started user process as pid 32 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc list | json
+[{"pid":32,"parent":1,"name":"control","domain":"user","state":"waiting","cpu_ticks":1,"frames":12,"output_bytes":18},{"pid":33,"parent":32,"name":"sleep","domain":"user","state":"sleeping","cpu_ticks":0,"frames":12,"output_bytes":13},{"pid":25,"parent":24,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":24,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":60},{"pid":27,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40},{"pid":26,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":52,"frames":0,"output_bytes":28},{"pid":29,"parent":28,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":28,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":43},{"pid":31,"parent":30,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":30,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":48}]
+tane> proc pause 32
+paused pid 32 (control)
+tane> status | json
+[{"code":"success","operation":"proc pause","message":"completed"}]
+tane> proc list | json
+[{"pid":32,"parent":1,"name":"control","domain":"user","state":"stopped","cpu_ticks":1,"frames":12,"output_bytes":18},{"pid":33,"parent":32,"name":"sleep","domain":"user","state":"sleeping","cpu_ticks":0,"frames":12,"output_bytes":13},{"pid":25,"parent":24,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":24,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":60},{"pid":27,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40},{"pid":26,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":52,"frames":0,"output_bytes":28},{"pid":29,"parent":28,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":28,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":43},{"pid":31,"parent":30,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":30,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":48}]
+tane> sleep 1750
+slept 1750 ms
+tane> proc list | json
+[{"pid":32,"parent":1,"name":"control","domain":"user","state":"stopped","cpu_ticks":1,"frames":12,"output_bytes":18},{"pid":24,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":60},{"pid":27,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40},{"pid":26,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":52,"frames":0,"output_bytes":28},{"pid":29,"parent":28,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":28,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":43},{"pid":31,"parent":30,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":30,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":48},{"pid":33,"parent":32,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26}]
+tane> proc list | json
+[{"pid":32,"parent":1,"name":"control","domain":"user","state":"stopped","cpu_ticks":1,"frames":12,"output_bytes":18},{"pid":24,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":60},{"pid":27,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40},{"pid":26,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":52,"frames":0,"output_bytes":28},{"pid":29,"parent":28,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":28,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":43},{"pid":31,"parent":30,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":30,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":48},{"pid":33,"parent":32,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26}]
+tane> proc list | json
+[{"pid":32,"parent":1,"name":"control","domain":"user","state":"stopped","cpu_ticks":1,"frames":12,"output_bytes":18},{"pid":24,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":60},{"pid":27,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40},{"pid":26,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":52,"frames":0,"output_bytes":28},{"pid":29,"parent":28,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":28,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":43},{"pid":31,"parent":30,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":30,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":48},{"pid":33,"parent":32,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26}]
+tane> mem | json
+[{"usable":16058,"free":16046,"used":12,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":1,"frames":12,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc resume 32
+resumed pid 32 (control)
+tane> status | json
+[{"code":"success","operation":"proc resume","message":"completed"}]
+tane> proc wait 32
+control: child=33
+control: blocked wait resumed
+process 32 exited status 0 | domain user | cpu 1 ticks
+tane> status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane> proc list | json
+[{"pid":27,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40},{"pid":26,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":52,"frames":0,"output_bytes":28},{"pid":29,"parent":28,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":28,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":43},{"pid":31,"parent":30,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":30,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":48},{"pid":33,"parent":32,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":32,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":48}]
+tane> proc list | json
+[{"pid":27,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":40},{"pid":26,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":52,"frames":0,"output_bytes":28},{"pid":29,"parent":28,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":28,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":43},{"pid":31,"parent":30,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":30,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":48},{"pid":33,"parent":32,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":32,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":48}]
+tane> mem | json
+[{"usable":16058,"free":16058,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run control "pending"
+started user process as pid 34 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc pause 34
+paused pid 34 (control)
+tane> status | json
+[{"code":"success","operation":"proc pause","message":"completed"}]
+tane> proc list | json
+[{"pid":34,"parent":1,"name":"control","domain":"user","state":"stopped","cpu_ticks":0,"frames":12,"output_bytes":18},{"pid":26,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":52,"frames":0,"output_bytes":28},{"pid":29,"parent":28,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":28,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":43},{"pid":31,"parent":30,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":30,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":48},{"pid":33,"parent":32,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":32,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":48},{"pid":35,"parent":34,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30}]
+tane> sleep 50
+slept 50 ms
+tane> proc list | json
+[{"pid":34,"parent":1,"name":"control","domain":"user","state":"stopped","cpu_ticks":0,"frames":12,"output_bytes":18},{"pid":26,"parent":1,"name":"busy","domain":"user","state":"killed","cpu_ticks":52,"frames":0,"output_bytes":28},{"pid":29,"parent":28,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":28,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":43},{"pid":31,"parent":30,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":30,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":48},{"pid":33,"parent":32,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":32,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":48},{"pid":35,"parent":34,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30}]
+tane> mem | json
+[{"usable":16058,"free":16046,"used":12,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":1,"frames":12,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run hello
+started user process as pid 36 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 36
+Hello from Rust ring3. pid=36
+process 36 exited status 0 | domain user | cpu 0 ticks
+tane> status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane> proc list | json
+[{"pid":34,"parent":1,"name":"control","domain":"user","state":"stopped","cpu_ticks":0,"frames":12,"output_bytes":18},{"pid":29,"parent":28,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":28,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":43},{"pid":31,"parent":30,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":30,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":48},{"pid":33,"parent":32,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":32,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":48},{"pid":35,"parent":34,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":36,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30}]
+tane> proc output 36
+Hello from Rust ring3. pid=36
+tane> proc list | json
+[{"pid":34,"parent":1,"name":"control","domain":"user","state":"stopped","cpu_ticks":0,"frames":12,"output_bytes":18},{"pid":29,"parent":28,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":28,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":43},{"pid":31,"parent":30,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":30,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":48},{"pid":33,"parent":32,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":32,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":48},{"pid":35,"parent":34,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":36,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30}]
+tane> mem | json
+[{"usable":16058,"free":16046,"used":12,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":1,"frames":12,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc list | json
+[{"pid":34,"parent":1,"name":"control","domain":"user","state":"stopped","cpu_ticks":0,"frames":12,"output_bytes":18},{"pid":29,"parent":28,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":28,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":43},{"pid":31,"parent":30,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":30,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":48},{"pid":33,"parent":32,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":32,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":48},{"pid":35,"parent":34,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":36,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30}]
+tane> mem | json
+[{"usable":16058,"free":16046,"used":12,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":1,"frames":12,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run hello
+started user process as pid 37 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 37
+Hello from Rust ring3. pid=37
+process 37 exited status 0 | domain user | cpu 0 ticks
+tane> status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane> proc list | json
+[{"pid":34,"parent":1,"name":"control","domain":"user","state":"stopped","cpu_ticks":0,"frames":12,"output_bytes":18},{"pid":28,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":43},{"pid":31,"parent":30,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":30,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":48},{"pid":33,"parent":32,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":32,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":48},{"pid":35,"parent":34,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":36,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":37,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30}]
+tane> proc output 37
+Hello from Rust ring3. pid=37
+tane> proc list | json
+[{"pid":34,"parent":1,"name":"control","domain":"user","state":"stopped","cpu_ticks":0,"frames":12,"output_bytes":18},{"pid":28,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":43},{"pid":31,"parent":30,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":30,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":48},{"pid":33,"parent":32,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":32,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":48},{"pid":35,"parent":34,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":36,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":37,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30}]
+tane> mem | json
+[{"usable":16058,"free":16046,"used":12,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":1,"frames":12,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc list | json
+[{"pid":34,"parent":1,"name":"control","domain":"user","state":"stopped","cpu_ticks":0,"frames":12,"output_bytes":18},{"pid":28,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":43},{"pid":31,"parent":30,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":30,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":48},{"pid":33,"parent":32,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":32,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":48},{"pid":35,"parent":34,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":36,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":37,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30}]
+tane> mem | json
+[{"usable":16058,"free":16046,"used":12,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":1,"frames":12,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run hello
+started user process as pid 38 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 38
+Hello from Rust ring3. pid=38
+process 38 exited status 0 | domain user | cpu 0 ticks
+tane> status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane> proc list | json
+[{"pid":34,"parent":1,"name":"control","domain":"user","state":"stopped","cpu_ticks":0,"frames":12,"output_bytes":18},{"pid":31,"parent":30,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":30,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":48},{"pid":33,"parent":32,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":32,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":48},{"pid":35,"parent":34,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":36,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":37,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":38,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30}]
+tane> proc output 38
+Hello from Rust ring3. pid=38
+tane> proc list | json
+[{"pid":34,"parent":1,"name":"control","domain":"user","state":"stopped","cpu_ticks":0,"frames":12,"output_bytes":18},{"pid":31,"parent":30,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":30,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":48},{"pid":33,"parent":32,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":32,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":48},{"pid":35,"parent":34,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":36,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":37,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":38,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30}]
+tane> mem | json
+[{"usable":16058,"free":16046,"used":12,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":1,"frames":12,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc list | json
+[{"pid":34,"parent":1,"name":"control","domain":"user","state":"stopped","cpu_ticks":0,"frames":12,"output_bytes":18},{"pid":31,"parent":30,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":30,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":48},{"pid":33,"parent":32,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":32,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":48},{"pid":35,"parent":34,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":36,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":37,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":38,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30}]
+tane> mem | json
+[{"usable":16058,"free":16046,"used":12,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":1,"frames":12,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run hello
+started user process as pid 39 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 39
+Hello from Rust ring3. pid=39
+process 39 exited status 0 | domain user | cpu 0 ticks
+tane> status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane> proc list | json
+[{"pid":34,"parent":1,"name":"control","domain":"user","state":"stopped","cpu_ticks":0,"frames":12,"output_bytes":18},{"pid":30,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":48},{"pid":33,"parent":32,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":32,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":48},{"pid":35,"parent":34,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":36,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":37,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":38,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":39,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30}]
+tane> proc output 39
+Hello from Rust ring3. pid=39
+tane> proc list | json
+[{"pid":34,"parent":1,"name":"control","domain":"user","state":"stopped","cpu_ticks":0,"frames":12,"output_bytes":18},{"pid":30,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":48},{"pid":33,"parent":32,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":32,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":48},{"pid":35,"parent":34,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":36,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":37,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":38,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":39,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30}]
+tane> mem | json
+[{"usable":16058,"free":16046,"used":12,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":1,"frames":12,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc list | json
+[{"pid":34,"parent":1,"name":"control","domain":"user","state":"stopped","cpu_ticks":0,"frames":12,"output_bytes":18},{"pid":30,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":48},{"pid":33,"parent":32,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":32,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":48},{"pid":35,"parent":34,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":36,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":37,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":38,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":39,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30}]
+tane> mem | json
+[{"usable":16058,"free":16046,"used":12,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":1,"frames":12,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run hello
+started user process as pid 40 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 40
+Hello from Rust ring3. pid=40
+process 40 exited status 0 | domain user | cpu 0 ticks
+tane> status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane> proc list | json
+[{"pid":34,"parent":1,"name":"control","domain":"user","state":"stopped","cpu_ticks":0,"frames":12,"output_bytes":18},{"pid":33,"parent":32,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":32,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":48},{"pid":35,"parent":34,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":36,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":37,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":38,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":39,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":40,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30}]
+tane> proc output 40
+Hello from Rust ring3. pid=40
+tane> proc list | json
+[{"pid":34,"parent":1,"name":"control","domain":"user","state":"stopped","cpu_ticks":0,"frames":12,"output_bytes":18},{"pid":33,"parent":32,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":32,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":48},{"pid":35,"parent":34,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":36,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":37,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":38,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":39,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":40,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30}]
+tane> mem | json
+[{"usable":16058,"free":16046,"used":12,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":1,"frames":12,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc list | json
+[{"pid":34,"parent":1,"name":"control","domain":"user","state":"stopped","cpu_ticks":0,"frames":12,"output_bytes":18},{"pid":33,"parent":32,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":32,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":48},{"pid":35,"parent":34,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":36,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":37,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":38,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":39,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":40,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30}]
+tane> mem | json
+[{"usable":16058,"free":16046,"used":12,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":1,"frames":12,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run hello
+started user process as pid 41 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 41
+Hello from Rust ring3. pid=41
+process 41 exited status 0 | domain user | cpu 0 ticks
+tane> status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane> proc list | json
+[{"pid":34,"parent":1,"name":"control","domain":"user","state":"stopped","cpu_ticks":0,"frames":12,"output_bytes":18},{"pid":32,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":48},{"pid":35,"parent":34,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":36,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":37,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":38,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":39,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":40,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":41,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30}]
+tane> proc output 41
+Hello from Rust ring3. pid=41
+tane> proc list | json
+[{"pid":34,"parent":1,"name":"control","domain":"user","state":"stopped","cpu_ticks":0,"frames":12,"output_bytes":18},{"pid":32,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":48},{"pid":35,"parent":34,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":36,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":37,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":38,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":39,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":40,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":41,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30}]
+tane> mem | json
+[{"usable":16058,"free":16046,"used":12,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":1,"frames":12,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc list | json
+[{"pid":34,"parent":1,"name":"control","domain":"user","state":"stopped","cpu_ticks":0,"frames":12,"output_bytes":18},{"pid":32,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":1,"frames":0,"output_bytes":48},{"pid":35,"parent":34,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":36,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":37,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":38,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":39,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":40,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":41,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30}]
+tane> mem | json
+[{"usable":16058,"free":16046,"used":12,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":1,"frames":12,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run hello
+started user process as pid 42 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 42
+Hello from Rust ring3. pid=42
+process 42 exited status 0 | domain user | cpu 0 ticks
+tane> status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane> proc list | json
+[{"pid":34,"parent":1,"name":"control","domain":"user","state":"stopped","cpu_ticks":0,"frames":12,"output_bytes":18},{"pid":35,"parent":34,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":36,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":37,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":38,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":39,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":40,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":41,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":42,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30}]
+tane> proc output 42
+Hello from Rust ring3. pid=42
+tane> proc list | json
+[{"pid":34,"parent":1,"name":"control","domain":"user","state":"stopped","cpu_ticks":0,"frames":12,"output_bytes":18},{"pid":35,"parent":34,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":36,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":37,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":38,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":39,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":40,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":41,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":42,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30}]
+tane> mem | json
+[{"usable":16058,"free":16046,"used":12,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":1,"frames":12,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc list | json
+[{"pid":34,"parent":1,"name":"control","domain":"user","state":"stopped","cpu_ticks":0,"frames":12,"output_bytes":18},{"pid":35,"parent":34,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":36,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":37,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":38,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":39,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":40,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":41,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":42,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30}]
+tane> mem | json
+[{"usable":16058,"free":16046,"used":12,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":1,"frames":12,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run hello
+started user process as pid 43 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 43
+Hello from Rust ring3. pid=43
+process 43 exited status 0 | domain user | cpu 0 ticks
+tane> status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane> proc list | json
+[{"pid":34,"parent":1,"name":"control","domain":"user","state":"stopped","cpu_ticks":0,"frames":12,"output_bytes":18},{"pid":36,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":37,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":38,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":39,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":40,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":41,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":42,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":43,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30}]
+tane> proc output 43
+Hello from Rust ring3. pid=43
+tane> proc list | json
+[{"pid":34,"parent":1,"name":"control","domain":"user","state":"stopped","cpu_ticks":0,"frames":12,"output_bytes":18},{"pid":36,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":37,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":38,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":39,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":40,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":41,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":42,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":43,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30}]
+tane> mem | json
+[{"usable":16058,"free":16046,"used":12,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":1,"frames":12,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc list | json
+[{"pid":34,"parent":1,"name":"control","domain":"user","state":"stopped","cpu_ticks":0,"frames":12,"output_bytes":18},{"pid":36,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":37,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":38,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":39,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":40,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":41,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":42,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":43,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30}]
+tane> mem | json
+[{"usable":16058,"free":16046,"used":12,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":1,"frames":12,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run hello
+started user process as pid 44 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 44
+Hello from Rust ring3. pid=44
+process 44 exited status 0 | domain user | cpu 0 ticks
+tane> status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane> proc list | json
+[{"pid":34,"parent":1,"name":"control","domain":"user","state":"stopped","cpu_ticks":0,"frames":12,"output_bytes":18},{"pid":37,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":38,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":39,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":40,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":41,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":42,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":43,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":44,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30}]
+tane> proc output 44
+Hello from Rust ring3. pid=44
+tane> proc list | json
+[{"pid":34,"parent":1,"name":"control","domain":"user","state":"stopped","cpu_ticks":0,"frames":12,"output_bytes":18},{"pid":37,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":38,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":39,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":40,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":41,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":42,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":43,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":44,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30}]
+tane> mem | json
+[{"usable":16058,"free":16046,"used":12,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":1,"frames":12,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc list | json
+[{"pid":34,"parent":1,"name":"control","domain":"user","state":"stopped","cpu_ticks":0,"frames":12,"output_bytes":18},{"pid":37,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":38,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":39,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":40,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":41,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":42,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":43,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":44,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30}]
+tane> mem | json
+[{"usable":16058,"free":16046,"used":12,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":1,"frames":12,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run hello
+started user process as pid 45 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 45
+Hello from Rust ring3. pid=45
+process 45 exited status 0 | domain user | cpu 0 ticks
+tane> status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane> proc list | json
+[{"pid":34,"parent":1,"name":"control","domain":"user","state":"stopped","cpu_ticks":0,"frames":12,"output_bytes":18},{"pid":38,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":39,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":40,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":41,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":42,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":43,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":44,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":45,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30}]
+tane> proc output 45
+Hello from Rust ring3. pid=45
+tane> proc list | json
+[{"pid":34,"parent":1,"name":"control","domain":"user","state":"stopped","cpu_ticks":0,"frames":12,"output_bytes":18},{"pid":38,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":39,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":40,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":41,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":42,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":43,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":44,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":45,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30}]
+tane> mem | json
+[{"usable":16058,"free":16046,"used":12,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":1,"frames":12,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> sleep 1600
+slept 1600 ms
+tane> proc list | json
+[{"pid":34,"parent":1,"name":"control","domain":"user","state":"stopped","cpu_ticks":0,"frames":12,"output_bytes":18},{"pid":38,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":39,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":40,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":41,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":42,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":43,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":44,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":45,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30}]
+tane> proc resume 34
+resumed pid 34 (control)
+tane> status | json
+[{"code":"success","operation":"proc resume","message":"completed"}]
+tane> proc wait 34
+control: child=35
+control: completed child retained until wait
+process 34 exited status 0 | domain user | cpu 0 ticks
+tane> status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane> proc list | json
+[{"pid":39,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":40,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":41,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":42,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":43,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":44,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":45,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":34,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":63}]
+tane> proc list | json
+[{"pid":39,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":40,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":41,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":42,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":43,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":44,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":45,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":34,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":63}]
+tane> mem | json
+[{"usable":16058,"free":16058,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run control "live"
+started user process as pid 46 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc list | json
+[{"pid":46,"parent":1,"name":"control","domain":"user","state":"waiting","cpu_ticks":0,"frames":12,"output_bytes":18},{"pid":47,"parent":46,"name":"sleep","domain":"user","state":"sleeping","cpu_ticks":0,"frames":12,"output_bytes":13},{"pid":39,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":40,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":41,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":42,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":43,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":44,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":45,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":34,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":63}]
+tane> task kill 46
+killed pid 46 (control); 16046 frames free
+tane> proc wait 46
+control: child=47
+process 46 killed
+tane> status | json
+[{"code":"error","operation":"proc wait","message":"command failed"}]
+tane> proc list | json
+[{"pid":47,"parent":46,"name":"sleep","domain":"user","state":"sleeping","cpu_ticks":0,"frames":12,"output_bytes":13},{"pid":40,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":41,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":42,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":43,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":44,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":45,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":34,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":63},{"pid":46,"parent":1,"name":"control","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":18}]
+tane> proc list | json
+[{"pid":47,"parent":46,"name":"sleep","domain":"user","state":"sleeping","cpu_ticks":0,"frames":12,"output_bytes":13},{"pid":40,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":41,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":42,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":43,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":44,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":45,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":34,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":63},{"pid":46,"parent":1,"name":"control","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":18}]
+tane> proc list | json
+[{"pid":47,"parent":46,"name":"sleep","domain":"user","state":"sleeping","cpu_ticks":0,"frames":12,"output_bytes":13},{"pid":40,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":41,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":42,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":43,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":44,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":45,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":34,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":63},{"pid":46,"parent":1,"name":"control","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":18}]
+tane> mem | json
+[{"usable":16058,"free":16046,"used":12,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":1,"frames":12,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run hello
+started user process as pid 48 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 48
+Hello from Rust ring3. pid=48
+process 48 exited status 0 | domain user | cpu 0 ticks
+tane> status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane> proc list | json
+[{"pid":47,"parent":46,"name":"sleep","domain":"user","state":"sleeping","cpu_ticks":0,"frames":12,"output_bytes":13},{"pid":41,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":42,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":43,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":44,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":45,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":34,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":63},{"pid":46,"parent":1,"name":"control","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":18},{"pid":48,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30}]
+tane> proc output 48
+Hello from Rust ring3. pid=48
+tane> proc list | json
+[{"pid":47,"parent":46,"name":"sleep","domain":"user","state":"sleeping","cpu_ticks":0,"frames":12,"output_bytes":13},{"pid":41,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":42,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":43,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":44,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":45,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":34,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":63},{"pid":46,"parent":1,"name":"control","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":18},{"pid":48,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30}]
+tane> mem | json
+[{"usable":16058,"free":16046,"used":12,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":1,"frames":12,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc wait 47
+sleep: begin
+sleep: awake
+process 47 exited status 0 | domain user | cpu 0 ticks
+tane> status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane> proc list | json
+[{"pid":42,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":43,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":44,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":45,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":34,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":63},{"pid":46,"parent":1,"name":"control","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":18},{"pid":48,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":47,"parent":46,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26}]
+tane> proc list | json
+[{"pid":42,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":43,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":44,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":45,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":34,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":63},{"pid":46,"parent":1,"name":"control","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":18},{"pid":48,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":47,"parent":46,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26}]
+tane> mem | json
+[{"usable":16058,"free":16058,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run control "orphan"
+started user process as pid 49 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 49
+control: child=50
+control: parent leaving live child
+process 49 exited status 0 | domain user | cpu 0 ticks
+tane> status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane> proc list | json
+[{"pid":50,"parent":49,"name":"sleep","domain":"user","state":"sleeping","cpu_ticks":0,"frames":12,"output_bytes":13},{"pid":43,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":44,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":45,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":34,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":63},{"pid":46,"parent":1,"name":"control","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":18},{"pid":48,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":47,"parent":46,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":49,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":53}]
+tane> proc list | json
+[{"pid":50,"parent":49,"name":"sleep","domain":"user","state":"sleeping","cpu_ticks":0,"frames":12,"output_bytes":13},{"pid":43,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":44,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":45,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":34,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":63},{"pid":46,"parent":1,"name":"control","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":18},{"pid":48,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":47,"parent":46,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":49,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":53}]
+tane> proc wait 50
+sleep: begin
+sleep: awake
+process 50 exited status 0 | domain user | cpu 0 ticks
+tane> status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane> proc list | json
+[{"pid":44,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":45,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":34,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":63},{"pid":46,"parent":1,"name":"control","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":18},{"pid":48,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":47,"parent":46,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":49,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":53},{"pid":50,"parent":49,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26}]
+tane> proc list | json
+[{"pid":44,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":45,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":34,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":63},{"pid":46,"parent":1,"name":"control","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":18},{"pid":48,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":47,"parent":46,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":49,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":53},{"pid":50,"parent":49,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26}]
+tane> mem | json
+[{"usable":16058,"free":16058,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc list | json
+[{"pid":44,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":45,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":34,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":63},{"pid":46,"parent":1,"name":"control","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":18},{"pid":48,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":47,"parent":46,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":49,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":53},{"pid":50,"parent":49,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26}]
+tane> mem | json
+[{"usable":16058,"free":16058,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run files "position"
+started user process as pid 51 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 51
+files: seek write truncate zero-fill rights and stale cursor checks ok
+process 51 exited status 0 | domain user | cpu 2 ticks
+tane> status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane> proc list | json
+[{"pid":45,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":34,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":63},{"pid":46,"parent":1,"name":"control","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":18},{"pid":48,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":47,"parent":46,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":49,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":53},{"pid":50,"parent":49,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":51,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":2,"frames":0,"output_bytes":71}]
+tane> proc output 51
+files: seek write truncate zero-fill rights and stale cursor checks ok
+tane> proc list | json
+[{"pid":45,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":34,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":63},{"pid":46,"parent":1,"name":"control","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":18},{"pid":48,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":47,"parent":46,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":49,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":53},{"pid":50,"parent":49,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":51,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":2,"frames":0,"output_bytes":71}]
+tane> mem | json
+[{"usable":16058,"free":16058,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":0,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":1,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> file list | json
+[{"slot":0,"label":"user","bytes":10,"generation":6,"name":"ring3-position"}]
+tane> file write admin-source abcdef
+created admin-source (6 bytes, label admin)
+tane> file write occupied unchanged
+created occupied (9 bytes, label admin)
+tane> file rename admin-source admin-renamed
+renamed: admin-source -> admin-renamed
+tane> file list | json
+[{"slot":0,"label":"user","bytes":10,"generation":6,"name":"ring3-position"},{"slot":1,"label":"admin","bytes":6,"generation":2,"name":"admin-renamed"},{"slot":2,"label":"admin","bytes":9,"generation":1,"name":"occupied"}]
+tane> file list | json
+[{"slot":0,"label":"user","bytes":10,"generation":6,"name":"ring3-position"},{"slot":1,"label":"admin","bytes":6,"generation":2,"name":"admin-renamed"},{"slot":2,"label":"admin","bytes":9,"generation":1,"name":"occupied"}]
+tane> file rename admin-renamed occupied
+error: file exists
+tane> file list | json
+[{"slot":0,"label":"user","bytes":10,"generation":6,"name":"ring3-position"},{"slot":1,"label":"admin","bytes":6,"generation":2,"name":"admin-renamed"},{"slot":2,"label":"admin","bytes":9,"generation":1,"name":"occupied"}]
+tane> file read occupied
+unchanged
+tane> plan file append admin-renamed STALE
+planned #1; show to review, apply 1 to commit
+tane> file truncate admin-renamed 3
+resized: admin-renamed to 3 bytes
+tane> apply
+error: storage changed since plan; plan consumed
+tane> file read admin-renamed
+abc
+tane> file truncate admin-renamed 6
+resized: admin-renamed to 6 bytes
+tane> file list | json
+[{"slot":0,"label":"user","bytes":10,"generation":6,"name":"ring3-position"},{"slot":1,"label":"admin","bytes":6,"generation":4,"name":"admin-renamed"},{"slot":2,"label":"admin","bytes":9,"generation":1,"name":"occupied"}]
+tane> file truncate admin-renamed 4097
+error: file size exceeds 4096 bytes
+tane> file status | json
+[{"mounted":true,"version":2,"readonly":false,"replayed":false,"sectors":2048,"files":3,"model":"QEMU HARDDISK","error":null}]
+tane> file check | json
+[{"files":3,"bytes":25}]
+tane> file list | json
+[{"slot":0,"label":"user","bytes":10,"generation":6,"name":"ring3-position"},{"slot":1,"label":"admin","bytes":6,"generation":4,"name":"admin-renamed"},{"slot":2,"label":"admin","bytes":9,"generation":1,"name":"occupied"}]
+tane> file sync
+synced: disk write cache flushed
+tane> status | json
+[{"code":"success","operation":"file sync","message":"completed"}]
+tane> proc install echo admin-echo.tane
+installed echo as admin-echo.tane (90 bytes, label admin)
+tane> proc list | json
+[{"pid":45,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":34,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":63},{"pid":46,"parent":1,"name":"control","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":18},{"pid":48,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":47,"parent":46,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":49,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":53},{"pid":50,"parent":49,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":51,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":2,"frames":0,"output_bytes":71}]
+tane> mem | json
+[{"usable":16058,"free":16058,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":3,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":1,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run control "deniedfile admin-echo.tane"
+started user process as pid 52 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 52
+control: privileged child file denied
+process 52 exited status 0 | domain user | cpu 0 ticks
+tane> status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane> proc list | json
+[{"pid":34,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":63},{"pid":46,"parent":1,"name":"control","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":18},{"pid":48,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":47,"parent":46,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":49,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":53},{"pid":50,"parent":49,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":51,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":2,"frames":0,"output_bytes":71},{"pid":52,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":38}]
+tane> proc output 52
+control: privileged child file denied
+tane> proc list | json
+[{"pid":34,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":63},{"pid":46,"parent":1,"name":"control","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":18},{"pid":48,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":47,"parent":46,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":49,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":53},{"pid":50,"parent":49,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":51,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":2,"frames":0,"output_bytes":71},{"pid":52,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":38}]
+tane> mem | json
+[{"usable":16058,"free":16058,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":3,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":1,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> drop
+domain admin -> user; this cannot be undone until reboot
+tane$ file rename admin-renamed stolen
+denied: user may not write objects of domain admin (MAC policy; audited)
+tane$ file truncate admin-renamed 0
+denied: user may not write objects of domain admin (MAC policy; audited)
+tane$ file sync
+denied: user may not sync (MAC policy; audited)
+tane$ file upgrade
+denied: user may not format (MAC policy; audited)
+tane$ file list | json
+[{"slot":0,"label":"user","bytes":10,"generation":6,"name":"ring3-position"}]
+tane$ file check | json
+[{"files":1,"bytes":10}]
+tane$ proc install echo child-echo.tane
+installed echo as child-echo.tane (90 bytes, label user)
+tane$ proc list | json
+[{"pid":34,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":63},{"pid":46,"parent":1,"name":"control","domain":"user","state":"killed","cpu_ticks":0,"frames":0,"output_bytes":18},{"pid":48,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":47,"parent":46,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":49,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":53},{"pid":50,"parent":49,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":51,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":2,"frames":0,"output_bytes":71},{"pid":52,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":38}]
+tane$ mem | json
+[{"usable":16058,"free":16058,"used":0,"frame_bytes":4096}]
+tane$ top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":3,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":2,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane$ proc run control "file child-echo.tane"
+started user process as pid 53 (ring 3, domain user, 12 frames)
+tane$ status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane$ proc wait 53
+control: file child exited
+process 53 exited status 0 | domain user | cpu 0 ticks
+tane$ status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane$ proc list | json
+[{"pid":48,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":47,"parent":46,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":49,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":53},{"pid":50,"parent":49,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":51,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":2,"frames":0,"output_bytes":71},{"pid":52,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":38},{"pid":54,"parent":53,"name":"child-echo.tane","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":25},{"pid":53,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":27}]
+tane$ proc output 53
+control: file child exited
+tane$ proc list | json
+[{"pid":48,"parent":1,"name":"hello","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":30},{"pid":47,"parent":46,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":49,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":53},{"pid":50,"parent":49,"name":"sleep","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":26},{"pid":51,"parent":1,"name":"files","domain":"user","state":"exited","cpu_ticks":2,"frames":0,"output_bytes":71},{"pid":52,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":38},{"pid":54,"parent":53,"name":"child-echo.tane","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":25},{"pid":53,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":27}]
+tane$ mem | json
+[{"usable":16058,"free":16058,"used":0,"frame_bytes":4096}]
+tane$ top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":3,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":2,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane$ file write user-old persistent
+created user-old (10 bytes, label user)
+tane$ file rename user-old user-new
+renamed: user-old -> user-new
+tane$ file truncate user-new 4
+resized: user-new to 4 bytes
+tane$ file read user-new
+pers
+tane$ 
+--- QEMU advanced-persist ---
+TANE OS / RUST BARE METAL
+Self-made BIOS loader + Rust kernel. External crates: 0.
+64-bit mode | VGA + COM1 | PS/2 keyboard | bounded user heap
+RAM: 7 E820 entries | 16058 free 4 KiB frames (64232 KiB) above 1 MiB
+IDT: 32 exception handlers, #DF on IST1 | PIT timer 100 Hz
+Tasks: preemptive round robin, up to 8 tasks
+Protection: NX data | kernel text read-only | null page unmapped | CR0.WP
+MAC: enforcing compiled-in policy | shell domain admin (drop lowers it)
+Disk: TaneFS mounted, 6 files
+Network: unavailable (RTL8139 PCI device not found)
+Type help. English keyboard / ASCII input.
+READY
+tane> proc list | json
+[]
+tane> mem | json
+[{"usable":16058,"free":16058,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":3,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":3,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> file read user-new
+pers
+tane> file read occupied
+unchanged
+tane> file read user-old
+error: no such file
+tane> proc list | json
+[]
+tane> mem | json
+[{"usable":16058,"free":16058,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":3,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":3,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> proc run control "file child-echo.tane"
+started user process as pid 2 (ring 3, domain user, 12 frames)
+tane> status | json
+[{"code":"success","operation":"proc run","message":"completed"}]
+tane> proc wait 2
+control: file child exited
+process 2 exited status 0 | domain user | cpu 0 ticks
+tane> status | json
+[{"code":"success","operation":"proc wait","message":"completed"}]
+tane> proc list | json
+[{"pid":3,"parent":2,"name":"child-echo.tane","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":25},{"pid":2,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":27}]
+tane> proc output 2
+control: file child exited
+tane> proc list | json
+[{"pid":3,"parent":2,"name":"child-echo.tane","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":25},{"pid":2,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":27}]
+tane> mem | json
+[{"usable":16058,"free":16058,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":3,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":3,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> file check | json
+[{"files":6,"bytes":209}]
+tane> file sync
+synced: disk write cache flushed
+tane> proc list | json
+[{"pid":3,"parent":2,"name":"child-echo.tane","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":25},{"pid":2,"parent":1,"name":"control","domain":"user","state":"exited","cpu_ticks":0,"frames":0,"output_bytes":27}]
+tane> mem | json
+[{"usable":16058,"free":16058,"used":0,"frame_bytes":4096}]
+tane> top | json
+[{"domain":"admin","tasks":0,"frames":0,"files":3,"cpu_ticks":0,"cpu_percent":70,"task_limit":6,"frame_limit":4096},{"domain":"user","tasks":0,"frames":0,"files":3,"cpu_ticks":0,"cpu_percent":30,"task_limit":3,"frame_limit":24}]
+tane> 
+--- QEMU advanced-legacy ---
+TANE OS / RUST BARE METAL
+Self-made BIOS loader + Rust kernel. External crates: 0.
+64-bit mode | VGA + COM1 | PS/2 keyboard | bounded user heap
+RAM: 7 E820 entries | 16058 free 4 KiB frames (64232 KiB) above 1 MiB
+IDT: 32 exception handlers, #DF on IST1 | PIT timer 100 Hz
+Tasks: preemptive round robin, up to 8 tasks
+Protection: NX data | kernel text read-only | null page unmapped | CR0.WP
+MAC: enforcing compiled-in policy | shell domain admin (drop lowers it)
+Disk: TaneFS mounted, 2 files
+Network: unavailable (RTL8139 PCI device not found)
+Type help. English keyboard / ASCII input.
+READY
+tane> file status | json
+[{"mounted":true,"version":1,"readonly":true,"replayed":false,"sectors":2048,"files":2,"model":"QEMU HARDDISK","error":null}]
+tane> file list | json
+[{"slot":0,"label":"admin","bytes":20,"generation":7,"name":"legacy-admin"},{"slot":1,"label":"user","bytes":19,"generation":11,"name":"legacy-user"}]
+tane> file read legacy-admin
+original admin bytes
+tane> file read legacy-user
+original user bytes
+tane> file write legacy-user MUST-NOT-WRITE
+error: legacy TaneFS v1 is read-only (admin: file upgrade)
+tane> plan file write legacy-user MUST-NOT-PLAN
+error: legacy TaneFS v1 is read-only (admin: file upgrade)
+tane> apply
+error: no pending plan
+tane> file list | json
+[{"slot":0,"label":"admin","bytes":20,"generation":7,"name":"legacy-admin"},{"slot":1,"label":"user","bytes":19,"generation":11,"name":"legacy-user"}]
+tane> file upgrade
+upgraded: TaneFS v2, files and labels preserved
+tane> status | json
+[{"code":"success","operation":"file upgrade","message":"completed"}]
+tane> file status | json
+[{"mounted":true,"version":2,"readonly":false,"replayed":false,"sectors":2048,"files":2,"model":"QEMU HARDDISK","error":null}]
+tane> file list | json
+[{"slot":0,"label":"admin","bytes":20,"generation":7,"name":"legacy-admin"},{"slot":1,"label":"user","bytes":19,"generation":11,"name":"legacy-user"}]
+tane> file read legacy-admin
+original admin bytes
+tane> file read legacy-user
+original user bytes
+tane> file append legacy-user -v2
+appended to legacy-user (3 bytes)
+tane> file read legacy-user
+original user bytes-v2
+tane> 
+--- QEMU advanced-upgraded ---
+TANE OS / RUST BARE METAL
+Self-made BIOS loader + Rust kernel. External crates: 0.
+64-bit mode | VGA + COM1 | PS/2 keyboard | bounded user heap
+RAM: 7 E820 entries | 16058 free 4 KiB frames (64232 KiB) above 1 MiB
+IDT: 32 exception handlers, #DF on IST1 | PIT timer 100 Hz
+Tasks: preemptive round robin, up to 8 tasks
+Protection: NX data | kernel text read-only | null page unmapped | CR0.WP
+MAC: enforcing compiled-in policy | shell domain admin (drop lowers it)
+Disk: TaneFS mounted, 2 files
+Network: unavailable (RTL8139 PCI device not found)
+Type help. English keyboard / ASCII input.
+READY
+tane> file status | json
+[{"mounted":true,"version":2,"readonly":false,"replayed":false,"sectors":2048,"files":2,"model":"QEMU HARDDISK","error":null}]
+tane> file list | json
+[{"slot":0,"label":"admin","bytes":20,"generation":7,"name":"legacy-admin"},{"slot":1,"label":"user","bytes":22,"generation":12,"name":"legacy-user"}]
+tane> file read legacy-admin
+original admin bytes
+tane> file read legacy-user
+original user bytes-v2
+tane> file check | json
+[{"files":2,"bytes":42}]
+tane> 

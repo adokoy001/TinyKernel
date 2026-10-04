@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 
-// Tane OS: an original, small preemptive kernel. No heap and no external crates.
+// Tane OS: an original preemptive kernel. No kernel heap or external crates.
 // Hardened with W^X paging and a compiled-in mandatory access control policy.
 
 // Each print borrows the global console only for the duration of one line.
@@ -150,7 +150,7 @@ pub extern "C" fn _start() -> ! {
     kprintln!("TANE OS / RUST BARE METAL");
     console().color = 0x07;
     kprintln!("Self-made BIOS loader + Rust kernel. External crates: 0.");
-    kprintln!("64-bit mode | VGA + COM1 | PS/2 keyboard | no heap");
+    kprintln!("64-bit mode | VGA + COM1 | PS/2 keyboard | bounded user heap");
     let map = e820_map();
     let reserved_end = ((addr_of!(__kernel_end) as u64 + FRAME_SIZE - 1) & !(FRAME_SIZE - 1)).max(LOW_MEMORY_END);
     with_frames(|frames| frames.init(map, reserved_end));
@@ -392,7 +392,7 @@ pub(crate) fn execute_action(action: Action<'_>, keyboard: &mut Keyboard) -> Exe
             shell_runtime::help(&[]);
         }
         Action::About => {
-            kprintln!("Tane OS 0.8 - an original Rust kernel with isolated user processes.");
+            kprintln!("Tane OS 0.9 - an original Rust kernel with isolated user processes.");
             kprintln!("No Linux code, GRUB, external crates, libc, or host OS calls.");
             kprintln!("Firmware loads our 512-byte boot sector; it loads this kernel.");
             kprintln!("Ring 0, own GDT/TSS/IDT, PIT at {} Hz, E820 RAM in 4 KiB frames.", interrupts::TIMER_HZ);
@@ -415,7 +415,7 @@ pub(crate) fn execute_action(action: Action<'_>, keyboard: &mut Keyboard) -> Exe
             kprintln!("Shell stack: 0x80000..0x90000 (grows down)");
             kprintln!("VGA text:    0xb8000");
             kprintln!("First 1 GiB identity mapped: 4 KiB pages below 2 MiB, then 2 MiB pages.");
-            kprintln!("No heap. Command buffer: {} bytes (max {} input).", editor::LINE_CAPACITY, editor::LINE_CAPACITY);
+            kprintln!("No kernel heap. User heap: 0-8 pages. Command buffer: {} bytes (max {} input).", editor::LINE_CAPACITY, editor::LINE_CAPACITY);
             let map = e820_map();
             kprintln!("BIOS E820 map ({} entries):", map.len());
             for entry in map {
@@ -481,6 +481,8 @@ pub(crate) fn execute_action(action: Action<'_>, keyboard: &mut Keyboard) -> Exe
             Ok(pid) => kprintln!("started {} as pid {} in domain {}", kind.name(), pid, tasks::current_domain().name()),
             Err(tasks::SpawnError::Denied(denied)) => { report_denied(denied); state = ExecState::Denied; },
             Err(tasks::SpawnError::Failed(error)) => { kprintln!("error: {}", error); state = ExecState::Error; },
+            Err(tasks::SpawnError::NoMemory(error)) => { kprintln!("error: {}", error); state = ExecState::Error; },
+            Err(tasks::SpawnError::ChildPending) => { kprintln!("error: consume the pending child result first"); state = ExecState::Error; },
         },
         Action::Kill(Ok(pid)) => match tasks::kill(pid) {
             Ok(name) => kprintln!("killed pid {} ({}); {} frames free", pid, name, with_frames(|frames| frames.free_frames())),
@@ -497,7 +499,7 @@ pub(crate) fn execute_action(action: Action<'_>, keyboard: &mut Keyboard) -> Exe
             storage::Status::Absent => kprintln!("No ATA disk on the primary channel."),
             storage::Status::Unformatted { model, sectors, error } =>
                 kprintln!("ATA disk \"{}\", {} KiB: {}", model, sectors / 2, error.message()),
-            storage::Status::Mounted { model, sectors, files } =>
+            storage::Status::Mounted { model, sectors, files, .. } =>
                 kprintln!("ATA disk \"{}\", {} KiB: TaneFS mounted, {} of {} files used", model, sectors / 2,
                     files, fs::MAX_FILES),
         },
@@ -741,6 +743,8 @@ fn process_spawn(result: Result<u32, tasks::SpawnError>) -> ExecState {
         Ok(pid) => { kprintln!("started user process as pid {} (ring 3, domain user, 12 frames)", pid); ExecState::Success }
         Err(tasks::SpawnError::Denied(denied)) => { report_denied(denied); ExecState::Denied }
         Err(tasks::SpawnError::Failed(message)) => { kprintln!("error: {}", message); ExecState::Error }
+        Err(tasks::SpawnError::NoMemory(message)) => { kprintln!("error: {}", message); ExecState::Error }
+        Err(tasks::SpawnError::ChildPending) => { kprintln!("error: consume the pending child result first"); ExecState::Error }
     }
 }
 
@@ -780,6 +784,15 @@ pub(crate) fn execute_process(operation: operations::Operation, arguments: &[&st
             match storage::write(arguments[1], bytes, false) {
                 Ok(_) => { kprintln!("installed {} as {} ({} bytes, label {})", arguments[0], arguments[1], bytes.len(), tasks::current_domain().name()); ExecState::Success }
                 Err(error) => report_storage_mutation(error),
+            }
+        }
+        O::ProcessPause | O::ProcessResume => {
+            let pid = arguments[0].parse::<u32>().unwrap_or(0);
+            let result = if operation == O::ProcessPause { tasks::pause(pid) } else { tasks::resume(pid) };
+            match result {
+                Ok(name) => { kprintln!("{} pid {} ({})", if operation == O::ProcessPause { "paused" } else { "resumed" }, pid, name); ExecState::Success }
+                Err(tasks::KillError::Denied(denied)) => { report_denied(denied); ExecState::Denied }
+                Err(tasks::KillError::Failed(message)) => { kprintln!("error: {}", message); ExecState::Error }
             }
         }
         O::ProcessWait | O::ProcessOutput => {

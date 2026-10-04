@@ -60,6 +60,7 @@ pub enum Op {
     Fault,
     ReadAudit,
     Format,
+    Sync,
     Alloc,
     Free,
     Spawn,
@@ -79,6 +80,7 @@ impl Op {
             Op::Fault => "fault",
             Op::ReadAudit => "audit",
             Op::Format => "format",
+            Op::Sync => "sync",
             Op::Alloc => "alloc",
             Op::Free => "free",
             Op::Spawn => "spawn",
@@ -93,7 +95,7 @@ impl Op {
 
     pub fn class(self) -> Class {
         match self {
-            Op::Halt | Op::Reboot | Op::Fault | Op::ReadAudit | Op::Format => Class::System,
+            Op::Halt | Op::Reboot | Op::Fault | Op::ReadAudit | Op::Format | Op::Sync => Class::System,
             Op::Alloc | Op::Free => Class::Memory,
             Op::Spawn | Op::Kill => Class::Task,
             Op::Create | Op::Read | Op::Write | Op::Delete => Class::File,
@@ -122,7 +124,7 @@ use Domain::{Admin, User};
 /// The policy. Anything not allowed here is denied, including every request
 /// by or on a `kernel` object.
 pub const POLICY: [Rule; 8] = [
-    Rule { subject: Admin, class: Class::System, ops: &[Op::Halt, Op::Reboot, Op::Fault, Op::ReadAudit, Op::Format], objects: &[] },
+    Rule { subject: Admin, class: Class::System, ops: &[Op::Halt, Op::Reboot, Op::Fault, Op::ReadAudit, Op::Format, Op::Sync], objects: &[] },
     Rule { subject: Admin, class: Class::Memory, ops: &[Op::Alloc, Op::Free], objects: &[Admin, User] },
     Rule { subject: Admin, class: Class::Task, ops: &[Op::Spawn, Op::Kill], objects: &[Admin, User] },
     Rule { subject: Admin, class: Class::File, ops: &[Op::Create, Op::Read, Op::Write, Op::Delete], objects: &[Admin, User] },
@@ -216,7 +218,7 @@ mod tests {
     use super::{allowed, may_transition, AuditLog, Domain, Op, Reason, Record, POLICY};
     use Domain::*;
 
-    const ALL_OPS: [Op; 14] = [Op::Halt, Op::Reboot, Op::Fault, Op::ReadAudit, Op::Format, Op::Alloc, Op::Free,
+    const ALL_OPS: [Op; 15] = [Op::Halt, Op::Reboot, Op::Fault, Op::ReadAudit, Op::Format, Op::Sync, Op::Alloc, Op::Free,
                                Op::Spawn, Op::Kill, Op::Create, Op::Read, Op::Write, Op::Delete, Op::NetPing];
     const OBJECTS: [Option<Domain>; 4] = [None, Some(Kernel), Some(Admin), Some(User)];
 
@@ -237,7 +239,7 @@ mod tests {
         for op in [Op::Alloc, Op::Spawn, Op::Create] {
             assert!(allowed(User, op, None), "{op:?}");
         }
-        for op in [Op::Halt, Op::Reboot, Op::Fault, Op::ReadAudit, Op::Format, Op::NetPing] {
+        for op in [Op::Halt, Op::Reboot, Op::Fault, Op::ReadAudit, Op::Format, Op::Sync, Op::NetPing] {
             assert!(!allowed(User, op, None), "{op:?}");
         }
         for op in ALL_OPS.iter().filter(|op| op.has_object()) {

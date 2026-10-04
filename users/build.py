@@ -7,7 +7,7 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "build" / "users"
-PROGRAMS = ("hello", "echo", "busy", "sleep", "isolate", "files", "probe")
+PROGRAMS = ("hello", "echo", "busy", "sleep", "isolate", "files", "probe", "heap", "control")
 
 def run(*args):
     subprocess.run([str(arg) for arg in args], cwd=ROOT, check=True)

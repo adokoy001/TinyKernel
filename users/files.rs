@@ -2,9 +2,38 @@
 #![no_main]
 mod common;
 fn open(path:&[u8],rights:u64)->i64 { common::syscall(5,path.as_ptr() as u64,path.len() as u64,rights) }
+fn check(ok: bool) { if !ok { common::print(b"files: positioned I/O failed\n"); common::exit(10); } }
 #[no_mangle] #[link_section=".text.entry"]
 pub unsafe extern "C" fn _start(ptr:*const u8,len:usize)->! {
     let arg=common::args(ptr,len);
+    if arg==b"position" {
+        let path=b"ring3-position"; let handle=open(path,3); let old=open(path,1);
+        check(handle>0 && old>0); let token=handle as u64; let mut bytes=[0xffu8;16];
+        check(common::syscall(18,token,5,0)==5);
+        check(common::syscall(19,token,b"AB".as_ptr() as u64,2)==2);
+        check(common::syscall(6,old as u64,bytes.as_mut_ptr() as u64,1)==-116);
+        check(common::syscall(18,token,0,0)==0);
+        check(common::syscall(6,token,bytes.as_mut_ptr() as u64,7)==7);
+        check(bytes[..5]==[0,0,0,0,0] && bytes[5..7]==*b"AB");
+        check(common::syscall(18,token,2,0)==2);
+        check(common::syscall(19,token,0x40005ff0,32)==-14);
+        check(common::syscall(19,token,b"C".as_ptr() as u64,1)==1);
+        check(common::syscall(20,token,2,0)==2);
+        check(common::syscall(19,token,b"D".as_ptr() as u64,1)==1);
+        check(common::syscall(18,token,0,0)==0);
+        check(common::syscall(6,token,bytes.as_mut_ptr() as u64,4)==4 && bytes[..4]==[0,0,0,b'D']);
+        check(common::syscall(20,token,10,0)==10);
+        check(common::syscall(18,token,4,0)==4);
+        check(common::syscall(6,token,bytes.as_mut_ptr() as u64,6)==6 && bytes[..6]==[0,0,0,0,0,0]);
+        check(common::syscall(18,token,4097,0)==-22 && common::syscall(20,token,4097,0)==-22);
+        check(common::syscall(19,token,b"C".as_ptr() as u64,257)==-22);
+        let reader=open(path,1); check(reader>0);
+        check(common::syscall(18,reader as u64,0,0)==0);
+        check(common::syscall(19,reader as u64,b"E".as_ptr() as u64,1)==-13 && common::syscall(20,reader as u64,0,0)==-13);
+        common::syscall(8,old as u64,0,0); common::syscall(8,reader as u64,0,0); common::syscall(8,token,0,0);
+        check(common::syscall(18,token,0,0)==-9 && common::syscall(19,token,b"X".as_ptr() as u64,1)==-9 && common::syscall(20,token,0,0)==-9);
+        common::print(b"files: seek write truncate zero-fill rights and stale cursor checks ok\n"); common::exit(0);
+    }
     if let Some(token)=arg.strip_prefix(b"steal ") {
         let handle=common::number(token,0); let mut byte=0u8;
         if common::syscall(6,handle,(&raw mut byte) as u64,1)!=-9 {

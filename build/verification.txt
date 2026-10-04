@@ -1,128 +1,152 @@
-Tane OS verification — 2026 10 04 (0.8: isolated Rust user processes)
+Tane OS verification — 2026 10 04 (0.9: memory, durable storage and process control)
 
-Base: 76cac328eb7398d6c060a66e5b5472671e2cb874 (main, OS 0.7)
+Base: 6cb72ee4139a530240a9e08e91c72c8335cf4daa (main, OS 0.8)
 Compiler: rustc 1.90.0 (1159e78c4 2025-09-14)
 Binutils: GNU as / ld / objdump 2.42
 Emulator: QEMU 8.2.2, PC BIOS, TCG, 64 MiB RAM; smoke also boots 128 MiB.
-All four final guest suites used this same image, without rebuilding between
-runs. The process suite also checked the image hash before and after.
+All five final guest suites ran the same image; no rebuild occurred between
+runs. Process and advanced suites also checked image identity around execution.
 Image SHA256:
-442b5de5aff35c58997d84a2ad973382462947e7b7354c189964c74d89ab320a
+9ffadfb1380bc0776577f36e49d20f04ee2f175184ce898131b651f2a5028ef6
 
 HOST VALIDATION
-132 distinct Rust tests passed, 0 failed:
+159 distinct Rust tests passed, 0 failed:
   shell 12, frames 5, sched 5, mac 6, fs 6, inet 4,
   pci 2, rtl8139 3, resources 4, netstack 11,
   shell_lang 9, operations 4, records 13, editor 12,
-  variables 4, plans 13, executable 6, usermem 7,
-  handles 4, user_abi 1, storage integration 1.
-The 21 Rust test binaries perform 187 successful invocations because wrappers
+  variables 4, plans 13, executable 6, usermem 9,
+  handles 4, user_abi 2, storage integration 1,
+  process-control integration 6, crash/recovery integration 18.
+The 23 Rust test binaries perform 226 successful invocations because wrappers
 repeat imported module tests. Counts above remove those duplicates.
-A separate production AddressSpace integration executable is compiled without
---test: it exercises the actual allocation/mapping/copy/teardown implementation
-against aligned host memory and verifies page permissions, disjoint physical
-pages, zeroed BSS/arguments, whole-span validation, cross-page copies and wipe.
-7 Python build-gate tests passed against real assembled instructions, including
-SSE/x87/XSAVE in non-executable rodata, forbidden live kernel instructions and
-prefix-bearing FXSAVE. The mandatory integer-only kernel gate also passed on
-the final ELF. See host-summary.txt and tests/host.sh.
+
+The production AddressSpace harness is compiled without --test, exercising the
+actual allocator/mapping/copy/teardown implementation rather than a substitute.
+Seven groups passed: base permissions; sparse/noncontiguous private heap pages;
+whole-span/guard validation; injected partial-growth allocation failure and
+rollback; invalidation before shrink free and zeroed regrowth; max/no-op/zero
+sizes; dirty heap/base teardown wipe.
+Seven Python build-gate tests passed against real assembled instructions,
+including executable SSE/x87/XSAVE and prefix-bearing FXSAVE rejection. The
+mandatory integer-only guard passed on the final kernel ELF.
+See host-summary.txt and tests/host.sh.
+
+Storage fault tests run 4376 write/flush/prefix-cut scenarios within 18 named
+integration tests. They model a volatile write cache, durable flush boundaries,
+pre/post failures, dropped/partial flush persistence and torn sector prefixes.
+Every file mutation type, interrupted recovery, formatting and explicit v1
+upgrade is exercised. Whole-sector commit recovery yields old or new complete
+files and retains neighboring table entries. Torn commit/clear markers are
+rejected before replay. Tests also cover corrupt payload/table checksums,
+out-of-range journal fields, transient source rereads and poisoned instances.
+Some failure modes intentionally produce equivalent states at certain events;
+4376 is a scenario count, not 4376 distinct security guarantees.
 
 QEMU VALIDATION
-Baseline: 26 checks passed, 0 failed (14.75 s).
+Baseline: 26 checks passed, 0 failed (14.57 s).
 Network: 15 checks passed, 0 failed.
-Shell: 24 checks passed, 0 failed (17.16 s).
-User processes: 40 checks passed, 0 failed (25.36 s).
-Total: 105 named guest integration checks.
+Shell: 24 checks passed, 0 failed.
+User-process regression: 40 checks passed, 0 failed.
+Advanced memory/process/storage: 28 checks passed, 0 failed (29.07 s).
+Total: 133 named guest integration checks.
+The baseline corruption test now expects the broader filesystem/metadata
+checksum error message; it still damages stored file bytes and verifies refusal.
 
-Process checks include:
-  compiled Rust code executing at CPL3, captured output, exit and literal args;
-  sleep/yield/timer scheduling, responsive shell during a CPU-bound user loop;
-  two simultaneously live processes with the same virtual data address but
-  distinct physical memory and sentinels preserved across preemption;
-  zeroed reused pages, immutable User resource charges and atomic quota failure;
-  cancel-wait without killing, explicit kill and complete 12-frame recovery;
-  24 hardware probes: kernel code/data read/write, VGA read/write, RX write,
-  data/stack NX, null/guard/stack-end, CLI/HLT/IN/OUT/privileged interrupt,
-  SSE/x87/UD2/SYSCALL/SYSENTER/WRFSBASE/XSAVE;
-  each hardware probe terminates only its victim and leaves the shell usable;
-  malformed user ranges, overflow, excessive lengths and unknown syscall;
-  audited denials of privileged format/audit/network requests;
-  immutable read/write handle rights, closed/stale/cross-PID token rejection;
-  delete/recreate identities and reused handle slots never revive authority;
-  destination-domain read checks reject copying Admin files into User code;
-  bad commands/headers fail before process allocation or execution;
-  User file updates invalidate old shell plans; stale apply leaves exact data
-  unchanged and a fresh plan commits;
-  User-labelled Tane executables execute after a fresh QEMU restart.
-See process-summary.txt and process-serial.txt for the cases and raw transcript.
+Advanced checks include:
+  page-granular heap growth, full-range syscall copies across physical pages,
+  retained bytes after shrink and zeroed reallocation, bounds and flag errors;
+  User quota refusal without leaked pages, dynamic 20-frame process accounting
+  and complete heap/base/kernel-stack recovery after kill;
+  actual #PF for freed-heap access, NX execution and unmapped heap guard;
+  typed RX/RW/NX memory records and live-only introspection;
+  stopped busy process does not accumulate CPU ticks, then resumes execution;
+  invalid control targets and mutating pipeline-source rejection;
+  parent-only child spawn/wait/kill, exit 37, fault and kill outcomes;
+  no errno/negative-exit ambiguity: wait returns PID and writes a typed result;
+  bad descriptors, full spans, flags and status destinations produce no child
+  allocation or outcome consumption; a cross-page status copy succeeds;
+  a real simultaneously live unrelated User PID cannot be waited on or killed;
+  failed child quota allocation permits a clean retry after freeing parent heap;
+  a parent blocks in the scheduler while its child sleeps, then wakes on exit;
+  child completion is delivered while parent remains stopped until resume;
+  one unconsumed child remains reserved independently of the global eight-result
+  log even after ten unrelated exits; wait consumes it exactly once;
+  parent kill and normal exit leave a child running, and task-slot reuse cannot
+  deliver an old completion into a replacement process;
+  seek/positioned-write/truncate, immutable rights, stale handles, cursor
+  rollback and zero-filled holes/growth;
+  atomic rename with preserved labels and no overwrite, truncate/stale-plan
+  refusal, visible-file checksum counts, ATA cache sync and MAC on each path;
+  persisted files and file-backed children after a new QEMU boot;
+  a genuine v1 disk fixture mounts read-only, rejected writes/plans preserve
+  exact content/table bytes, Admin upgrade preserves labels/generations, v2
+  append succeeds and another fresh boot retains the upgraded state.
+See advanced-summary.txt and advanced-serial.txt.
 
-The baseline/network/shell suites retain all OS 0.7 checks: BIOS and drivers,
-E820 frame accounting, scheduling, MAC/quotas, persistent TaneFS and integrity,
-exception/IST/paging behavior, serial/PS2 editing, typed pipelines and JSON,
-variable literalness, scripts/depth/cancellation, one-use plans and permissions,
-RTL8139 IPv4/IPv6 replies, malformed network frames, timeout/recovery and
-zero packet emission for denied or invalid pipelines.
+The 105 OS 0.8 checks also pass: original BIOS/drivers/E820, trusted task
+scheduling, MAC and quotas, persistent TaneFS/integrity, kernel exceptions and
+IST, paging, typed shell/JSON/variables/editor/history/scripts/plans, real
+RTL8139 IPv4/IPv6 and denied-packet behavior, isolated user processes, bounded
+syscalls/capabilities, 24 hostile instruction/memory probes and complete cleanup.
 See smoke-summary.txt, smoke-serial.txt, network-summary.txt,
 network-qemu-{peer,no-nic,slirp,shell-peer}.serial,
-shell-summary.txt and shell-serial.txt.
-The deterministic Ethernet peer uses an inherited local socketpair, not an
-outside host. QEMU user-network checks use 10.0.2.2 and fd00::2. Serial test
-transports use local pipes in this environment.
+shell-summary.txt, shell-serial.txt, process-summary.txt and process-serial.txt.
+Ethernet uses a local deterministic peer or QEMU gateways 10.0.2.2/fd00::2;
+no external host is required. Serial transports are local pipes here.
 
 IMAGE AND STACK BOUNDS
-Boot: exactly 512 bytes, ending 55 AA; loads 768 sectors / 384 KiB.
-KERNEL_SECTORS in boot.S is the shared loader/build size-limit source.
-A QEMU boundary probe read the last byte at 0x6ffff across BIOS track/head and
-64 KiB DMA window transitions, then entered long mode successfully.
-Flat kernel: 311288 bytes < 393216-byte load budget.
-Kernel entry: 0x10000, ELF64 x86-64; loaded end: 0x5bff8.
-BSS: NOLOAD at 0x100000, end 0x127158 < linker limit 0x200000.
-Allocator reservation is rounded through 0x128000; E820 host/guest accounting
-uses this actual boundary. Relocating BSS did not add a 1 MiB binary padding.
-Unresolved ELF symbols: none. Linker checks loaded image, shell stack and BSS.
+Boot: 512 bytes, ending 55 AA; original 768-sector / 384 KiB BIOS loader.
+Flat kernel: 345448 bytes < 393216 bytes, with 47768 bytes available.
+Entry: 0x10000; loaded end: 0x64568 < shell stack base 0x80000.
+NOLOAD BSS: 0x100000..0x125270 < 0x200000; reserved through 0x126000.
+The allocator and E820 integration use the actual page-rounded BSS boundary.
+Unresolved ELF symbols: none. Integer-only executable kernel gate: PASS.
+Original loader last-sector/DMA-window probes from OS 0.8 still apply; boot.S
+and its 384 KiB shared limit were unchanged for 0.9.
 
-Final disassembly stack audit keyed functions by address and resolved all 226
-GOT indirect call/jump targets. Conservative call-path estimates:
-  shell with four nested scripts and a heavy proc-output/error leaf:
-    50920 / 65536 bytes;
-  syscall dispatch with file append/storage/table write/error formatting:
-    7727 / 16384 bytes, including the 176-byte frame and 15-byte alignment reserve;
-  shell plus one full maximum dispatch reserve: 58647 bytes, 6889 bytes spare.
-These are static estimates, not an exhaustive proof of register/vtable calls
-or arbitrary NMI/exception nesting. Depth-four heavy file/pipeline operations
-and the final process suite also ran on the real guest stacks.
+Final address-specific disassembly audit conservatively sums stack allocation,
+pushes, direct calls and resolved GOT memory calls. Longest User syscall path
+(file-backed child creation): 6960 bytes plus 176-byte interrupt/frame save,
+approximately 7.2 KiB < 16 KiB kernel stack. Four nested shell scripts and a
+heavy process-output leaf: 51400 bytes; adding the entire maximum dispatcher
+and saved frame gives 58536 bytes < 65536. New file-check paths are smaller.
+Dynamic formatting/callback paths inspected were small. These static estimates
+are not an exhaustive proof of register/vtable calls or arbitrary NMI/exception
+nesting; real depth-four and process/advanced cases also ran on these stacks.
+User read now uses a bounded 256-byte buffer instead of a 4096-byte snapshot;
+filesystem patch/append uses sector streaming rather than a 4096-byte copy.
 
-SECURITY BOUNDARIES AND CURRENT LIMITS
-Each User process has its own CR3, RX code, RW/NX data and 8 KiB RW/NX stack
-with unmapped guards. Four page-table frames, four user-memory frames and a
-16 KiB kernel stack total 12 frames, all charged to User even for an Admin
-caller. The User frame limit is 24, so at most two such processes fit when
-no other User frames are allocated. Processes never reuse PIDs within a boot.
-Syscall input is copied only after validating the complete user range; output
-writes are similarly checked before storage effects or handle cursor changes.
-TSS IO bitmap is beyond its architectural 104-byte limit, denying User I/O.
-SYSCALL/SYSENTER alternate entries, FSGSBASE and OSXSAVE are disabled;
-FS/GS bases are zero. CR0.TS/MP traps unsupported x87/MMX/SSE state. No FPU,
-SIMD, TLS, dynamic linking, heap, fork, POSIX compatibility or network syscalls.
-Executable files use a strict original 32-byte Tane header, <=4096-byte total,
-with one code page and one data/BSS page; no ELF loader or relocations.
-The Shell and trusted demonstration tasks remain ring 0. File MAC is shared
-Admin/User domain policy, not PID-specific private files or per-user ACLs.
-Four handles per process have immutable rights, owning PID, non-reused tokens
-and mutation identities checked on each read/write. Exit, kill and fault
-revoke handles; after leaving the task stack/CR3, all 12 frames are wiped and
-returned to the immutable charge owner. Bounded exit/output records remain.
-Stdout retains 1024 bytes per process lifetime, with eight recent outcomes;
-reading output does not drain the limit. Control bytes are escaped on display.
+BOUNDARIES AND LIMITS
+A process still owns 12 base frames; heap adds 0..8 independently allocated
+RW/NX frames at 0x40010000. Growth charges User before allocation, rolls back
+both charge and reserved pages on failure, and never publishes a partial heap.
+Shrink unmaps/invalidates before wipe/free. All variable-size frames are wiped
+and returned to the immutable charge owner after exit, fault or kill.
+User's 24-frame quota is unchanged: two base processes leave no heap budget;
+a parent must free all heap pages to fit a base child beside itself.
+No kernel heap, external crates, fork, SIMD/FPU/TLS or POSIX compatibility.
 
-Storage operations serialize against user syscalls. Stage/apply masks interrupts
-across the entire validation/snapshot/revision/consume/effect/discard transaction,
-closing the plan check/use race introduced by concurrent user file mutations.
-The deterministic guest plan test covers changed revisions; the narrow race
-itself is closed by inspection of the uninterrupted critical section, not a
-forced race schedule.
-Plans are not a journal or power-failure rollback. In-memory failing disk tests
-cover error handling; physical disk errors, stack-canary overflow and real
-hardware/UEFI were not reproduced. Network remains static ARP/NDP/ICMP without
-TCP/UDP/DNS. Hardware fault probes and QEMU tests are evidence of these specific
-boundaries, not a claim of complete security for arbitrary hardware or programs.
+TaneFS v2 retains fixed 32-file/4096-byte layout and adds checksum sector LBA5
+plus redo journal LBA264..274. Ordered flushes separate clear, payload, commit,
+home update and clear completion. Acknowledged mutations crossed all barriers.
+Durability assumes the device honors flush and a commit sector is atomic or
+its tear is detected. Corrupt/torn commit or clear markers fail mount closed;
+arbitrary power loss is not guaranteed to leave a mountable filesystem.
+A disk error after commit may have taken effect despite an error return;
+storage is invalidated and remount performs valid journal recovery.
+FNV checksums detect accidental corruption, not adversarial forgery.
+
+Legacy v1 is never silently reformatted. Explicit Admin file upgrade verifies
+all file contents and original table, stages auxiliary checksums/journal with
+flushes, then publishes the v2 superblock last. Home data/table/labels/generation
+remain unchanged. Torn final superblock may refuse mounting while preserving
+home bytes. Formatting is explicitly destructive and has a separate cut test.
+Parent-child authority applies to user syscalls. The trusted ring0 Shell still
+uses Admin/User domain MAC; User files are shared across that domain, not PID-
+private. Four immutable PID-bound file handles remain checked on every use.
+One child slot per live parent includes running and completed-unconsumed child;
+orphan children continue without inheriting new authority. Recent shell output
+remains bounded to 1024 bytes per process and eight outcomes, independent of
+parent's pinned wait result. No pipes, stdin, IPC or general signal handlers.
+Physical hardware/UEFI, actual disk power cuts and arbitrary stack corruption
+were not tested. Network remains static ARP/NDP/ICMP without TCP/UDP/DNS.

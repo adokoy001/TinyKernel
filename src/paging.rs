@@ -58,6 +58,23 @@ pub unsafe fn activate(root: u64) {
     asm!("mov cr3, {}", in(reg) root, options(nostack, preserves_flags));
 }
 
+/// Invalidate changed user mappings before their physical frames can be
+/// reused. Scheduling must be disabled while page-table entries change. The
+/// kernel does not enable PCID and user entries are never global, so an
+/// inactive root has no translations surviving the next CR3 activation.
+pub unsafe fn invalidate_user_range(root: u64, start: u64, pages: usize) {
+    let current: u64;
+    asm!("mov {}, cr3", out(reg) current, options(nomem, nostack, preserves_flags));
+    if current == root {
+        for page in 0..pages {
+            let address = start + page as u64 * PAGE;
+            // This assembly deliberately permits memory effects: cleared PTE
+            // stores must become visible before INVLPG and frame reuse.
+            asm!("invlpg [{}]", in(reg) address, options(nostack, preserves_flags));
+        }
+    }
+}
+
 /// Build and load the hardened tables. Call once, with interrupts disabled.
 pub unsafe fn init() {
     let extended = __cpuid(0x8000_0000).eax;

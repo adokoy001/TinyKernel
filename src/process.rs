@@ -5,7 +5,7 @@
 //! memory and syscall capabilities are erased once the CPU has left it.
 
 use crate::executable::Image;
-use crate::interrupts;
+use crate::interrupts::{self, Frame};
 use crate::mac::{self, Domain, Op};
 use crate::security::{self, Denied};
 use crate::tasks::{self, SpawnError};
@@ -37,6 +37,7 @@ pub struct ProcessInfo {
     pub state: &'static str,
     pub cpu_ticks: u64,
     pub frames: u32,
+    pub heap_pages: usize,
     pub output_len: usize,
     /// A whole stdout write was refused because the bounded queue was full.
     pub truncated: bool,
@@ -47,7 +48,7 @@ pub struct ProcessInfo {
 
 impl ProcessInfo {
     const EMPTY: Self = Self { pid: 0, parent_pid: 0, domain: Domain::User, state: "free",
-        cpu_ticks: 0, frames: 0, output_len: 0, truncated: false, reason: None,
+        cpu_ticks: 0, frames: 0, heap_pages: 0, output_len: 0, truncated: false, reason: None,
         name: [0; NAME_BYTES], name_len: 0 };
 
     pub fn name(&self) -> &str {
@@ -62,11 +63,19 @@ struct Live {
     space: Option<AddressSpace>,
     output: [u8; OUTPUT_BYTES],
     terminal: bool,
+    /// One reserved, unconsumed child relation per live ring 3 parent. This
+    /// completion cannot be evicted by the separate shell-visible result log.
+    child: Child,
+    waiting_output: Option<u64>,
 }
 
 impl Live {
-    const EMPTY: Self = Self { info: ProcessInfo::EMPTY, space: None, output: [0; OUTPUT_BYTES], terminal: false };
+    const EMPTY: Self = Self { info: ProcessInfo::EMPTY, space: None, output: [0; OUTPUT_BYTES], terminal: false,
+        child: Child::None, waiting_output: None };
 }
+
+#[derive(Clone, Copy)]
+enum Child { None, Running(u32), Completed(u32, ExitReason) }
 
 #[derive(Clone, Copy)]
 struct Outcome { info: ProcessInfo, output: [u8; OUTPUT_BYTES] }
@@ -91,6 +100,30 @@ pub(crate) unsafe fn install(slot: usize, pid: u32, parent_pid: u32, name: &str,
     live.output.fill(0);
     live.terminal = false;
     live.space = Some(space);
+    live.child = Child::None;
+    live.waiting_output = None;
+    // Register only after all image/stack allocations succeeded. The check in
+    // spawn_user and this publication share IF=0, so no child is lost between.
+    for parent in (*addr_of_mut!(LIVE)).iter_mut() {
+        if parent.info.pid == parent_pid && parent.space.is_some() && !parent.terminal {
+            assert!(matches!(parent.child, Child::None), "parent child reservation changed");
+            parent.child = Child::Running(pid);
+            break;
+        }
+    }
+}
+
+/// IF=0. Ring 0 creators do not use child-wait capabilities; User creators
+/// must consume a previous completion before allocating the next child.
+pub(crate) fn check_child_capacity() -> Result<(), SpawnError> {
+    if !tasks::is_user() { return Ok(()); }
+    unsafe {
+        let live = &(*addr_of!(LIVE))[tasks::current_slot()];
+        if live.terminal || live.space.is_none() || !matches!(live.child, Child::None) {
+            return Err(SpawnError::ChildPending);
+        }
+    }
+    Ok(())
 }
 
 /// Only syscall dispatch may borrow this, with IF=0. A current process's
@@ -98,6 +131,118 @@ pub(crate) unsafe fn install(slot: usize, pid: u32, parent_pid: u32, name: &str,
 pub fn current_space() -> Option<&'static AddressSpace> {
     if !tasks::is_user() { return None; }
     unsafe { (*addr_of!(LIVE))[tasks::current_slot()].space.as_ref() }
+}
+
+pub enum HeapResizeError {
+    NotUser,
+    Memory(crate::usermem::HeapError),
+    Denied(Denied),
+}
+
+/// Growth charges the immutable owner before allocation, with a full rollback
+/// if physical allocation fails. Shrink invalidates mappings before returning
+/// quota; teardown uses the scheduler's matching dynamic frame count.
+pub fn resize_current(pages: usize) -> Result<usize, HeapResizeError> {
+    interrupts::without(|| unsafe {
+        if !tasks::is_user() { return Err(HeapResizeError::NotUser); }
+        if pages > crate::usermem::HEAP_MAX_PAGES {
+            return Err(HeapResizeError::Memory(crate::usermem::HeapError::TooLarge));
+        }
+        security::check(Op::Alloc, None, None).map_err(HeapResizeError::Denied)?;
+        let live = &mut (*addr_of_mut!(LIVE))[tasks::current_slot()];
+        let space = live.space.as_mut().ok_or(HeapResizeError::NotUser)?;
+        let old = space.heap_pages();
+        let owner = tasks::current_charge_owner();
+        if pages > old {
+            security::charge_domain(owner, Op::Alloc, 0, (pages - old) as u32)
+                .map_err(HeapResizeError::Denied)?;
+        }
+        if let Err(error) = space.resize_heap(pages) {
+            if pages > old { security::release(owner, 0, (pages - old) as u32); }
+            return Err(HeapResizeError::Memory(error));
+        }
+        if pages < old { security::release(owner, 0, (old - pages) as u32); }
+        let frames = tasks::STACK_FRAMES as u32 + space.owned_frames() as u32;
+        live.info.frames = frames;
+        live.info.heap_pages = pages;
+        tasks::set_current_frames(frames);
+        Ok(pages)
+    })
+}
+
+pub enum ChildError {
+    NotChild,
+    AlreadyExited,
+    InvalidPointer,
+    Failed(&'static str),
+    Denied(Denied),
+}
+
+/// Outcome ABI is five little-endian words; fault addresses and kernel
+/// metadata are deliberately absent. Ordinary signed exit codes keep all bits.
+fn child_outcome(pid: u32, reason: ExitReason) -> [u8; 40] {
+    let (kind, code, vector, error) = match reason {
+        ExitReason::Exit(status) => (0, status as u64, 0, 0),
+        ExitReason::Fault { vector, error, .. } => (1, 0, vector, error),
+        ExitReason::Killed => (2, 0, 0, 0),
+    };
+    let words = [pid as u64, kind, code, vector, error];
+    let mut bytes = [0; 40];
+    for (index, word) in words.iter().enumerate() {
+        bytes[index * 8..index * 8 + 8].copy_from_slice(&word.to_le_bytes());
+    }
+    bytes
+}
+
+/// Validate the complete writable result span before observing, consuming or
+/// blocking on a child. Ownership and block publication are atomic under IF=0.
+pub fn wait_child(frame: *mut Frame, pid: u32, output_pointer: u64) -> Result<*mut Frame, ChildError> {
+    interrupts::without(|| unsafe {
+        if !tasks::is_user() { return Err(ChildError::NotChild); }
+        let slot = tasks::current_slot();
+        let live = &mut (*addr_of_mut!(LIVE))[slot];
+        let space = live.space.as_ref().ok_or(ChildError::NotChild)?;
+        space.validate_write(output_pointer, 40).map_err(|_| ChildError::InvalidPointer)?;
+        match live.child {
+            Child::Completed(child, reason) if child == pid && pid != 0 => {
+                space.copy_to_user(output_pointer, &child_outcome(child, reason))
+                    .map_err(|_| ChildError::InvalidPointer)?;
+                live.child = Child::None;
+                (*frame).rax = child as u64;
+                Ok(frame)
+            }
+            Child::Running(child) if child == pid && pid != 0 => {
+                live.waiting_output = Some(output_pointer);
+                // No LIVE loan survives the scheduler callback below.
+                Ok(tasks::wait_child_current(frame, child))
+            }
+            _ => {
+                security::deny_capability(Op::Read, Some(Domain::User), Some(pid as u64));
+                Err(ChildError::NotChild)
+            }
+        }
+    })
+}
+
+/// This is the only user syscall route to killing another process. A shared
+/// User domain alone never conveys authority over an unrelated User PID.
+pub fn kill_child(pid: u32) -> Result<(), ChildError> {
+    interrupts::without(|| unsafe {
+        if !tasks::is_user() { return Err(ChildError::NotChild); }
+        let child = (*addr_of!(LIVE))[tasks::current_slot()].child;
+        match child {
+            Child::Running(child) if child == pid && pid != 0 => {},
+            Child::Completed(child, _) if child == pid && pid != 0 => return Err(ChildError::AlreadyExited),
+            _ => {
+                security::deny_capability(Op::Kill, Some(Domain::User), Some(pid as u64));
+                return Err(ChildError::NotChild);
+            }
+        }
+        tasks::kill(pid).map(|_| ()).map_err(|error| match error {
+            tasks::KillError::Denied(denied) => ChildError::Denied(denied),
+            tasks::KillError::Failed(message) => ChildError::Failed(message),
+        })
+    })
 }
 
 /// The syscall boundary validates user input first. Writes are all or
@@ -121,19 +266,48 @@ pub fn append_output(bytes: &[u8]) -> Result<(), &'static str> {
 /// Capture before invalidating capabilities and before leaving the current
 /// stack. Result replacement physically wipes the older output.
 pub(crate) unsafe fn finish(slot: usize, cpu_ticks: u64, reason: ExitReason) {
-    let live = &mut (*addr_of_mut!(LIVE))[slot];
-    assert!(live.space.is_some() && !live.terminal, "user process finished twice");
-    live.info.cpu_ticks = cpu_ticks;
-    live.info.state = reason.state();
-    live.info.reason = Some(reason);
-    live.info.frames = 0;
-    let result = &mut (*addr_of_mut!(RESULTS))[NEXT_RESULT];
-    result.output.fill(0);
-    result.info = live.info;
-    result.output[..live.info.output_len].copy_from_slice(&live.output[..live.info.output_len]);
-    NEXT_RESULT = (NEXT_RESULT + 1) % KEPT_RESULTS;
-    live.output.fill(0);
-    live.terminal = true;
+    let (pid, parent_pid) = {
+        let live = &mut (*addr_of_mut!(LIVE))[slot];
+        assert!(live.space.is_some() && !live.terminal, "user process finished twice");
+        live.info.cpu_ticks = cpu_ticks;
+        live.info.state = reason.state();
+        live.info.reason = Some(reason);
+        live.info.frames = 0;
+        live.info.heap_pages = 0;
+        let result = &mut (*addr_of_mut!(RESULTS))[NEXT_RESULT];
+        result.output.fill(0);
+        result.info = live.info;
+        result.output[..live.info.output_len].copy_from_slice(&live.output[..live.info.output_len]);
+        NEXT_RESULT = (NEXT_RESULT + 1) % KEPT_RESULTS;
+        live.output.fill(0);
+        live.terminal = true;
+        // Children survive a parent exit as orphans. Drop its completion
+        // authority; immutable PIDs prevent a reused slot becoming a parent.
+        live.child = Child::None;
+        live.waiting_output = None;
+        (live.info.pid, live.info.parent_pid)
+    };
+    let mut wake = None;
+    for parent in (*addr_of_mut!(LIVE)).iter_mut() {
+        if parent.info.pid != parent_pid || parent.terminal || parent.space.is_none() { continue; }
+        if !matches!(parent.child, Child::Running(child) if child == pid) { continue; }
+        parent.child = Child::Completed(pid, reason);
+        if let Some(pointer) = parent.waiting_output.take() {
+            let copied = parent.space.as_ref().unwrap().copy_to_user(pointer, &child_outcome(pid, reason));
+            let result = if copied.is_ok() {
+                parent.child = Child::None;
+                pid as i64
+            } else {
+                // Preserve Completed for a retry; a defensive wake never
+                // writes through an invalid pointer or loses an exit status.
+                crate::user_abi::EFAULT
+            };
+            wake = Some((parent_pid, pid, result));
+        }
+        break;
+    }
+    // All LIVE loans end before updating a task's saved frame.
+    if let Some((parent, child, result)) = wake { tasks::wake_child_wait(parent, child, result); }
 }
 
 /// IF=0 and the CPU has left this process's CR3 and kernel stack.
@@ -144,6 +318,8 @@ pub(crate) unsafe fn reap(slot: usize) {
     live.output.fill(0);
     live.info = ProcessInfo::EMPTY;
     live.terminal = false;
+    live.child = Child::None;
+    live.waiting_output = None;
 }
 
 pub fn spawn_builtin(name: &str, args: &str) -> Result<u32, SpawnError> {
@@ -204,6 +380,7 @@ pub fn info(pid: u32) -> Result<ProcessInfo, ReadError> {
                 let mut info = live.info;
                 info.state = task.state;
                 info.cpu_ticks = task.cpu_ticks;
+                info.frames = task.frames;
                 return Ok(info);
             }
         }
@@ -225,6 +402,7 @@ pub fn list(mut each: impl FnMut(&ProcessInfo)) {
                     let mut info = live.info;
                     info.state = task.state;
                     info.cpu_ticks = task.cpu_ticks;
+                    info.frames = task.frames;
                     snapshot[slot] = Some(info);
                 }
             }
@@ -251,6 +429,7 @@ pub fn output(pid: u32, render: impl FnOnce(&ProcessInfo, &[u8])) -> Result<(), 
                 copy.info = live.info;
                 copy.info.state = task.state;
                 copy.info.cpu_ticks = task.cpu_ticks;
+                copy.info.frames = task.frames;
                 copy.output[..live.info.output_len].copy_from_slice(&live.output[..live.info.output_len]);
                 return Ok(());
             }
